@@ -1,18 +1,5 @@
 import React from 'react';
-import { 
-  Brain, 
-  Package, 
-  AlertTriangle, 
-  CheckCircle, 
-  TrendingUp, 
-  Code, 
-  Database, 
-  Cloud, 
-  Tool,
-  Shield,
-  Clock,
-  BarChart3
-} from 'lucide-react';
+import { Brain, Package, AlertTriangle, CheckCircle, TrendingUp, Code, Database, Cloud, PenTool as Tool, Shield, Clock, BarChart3 } from 'lucide-react';
 import { RepositoryAnalysis } from '../types/analysis';
 
 interface AnalysisPanelProps {
