@@ -7,6 +7,75 @@ export class DockerGenerator {
     this.analysis = analysis;
   }
 
+  async generateFiles(): Promise<GeneratedFiles> {
+    // Try LLM-enhanced generation first
+    try {
+      const llmFiles = await this.generateLLMEnhanced();
+      if (llmFiles) {
+        return llmFiles;
+      }
+    } catch (error) {
+      console.warn('LLM Docker generation failed, falling back to traditional generation:', error);
+    }
+
+    // Fallback to traditional generation
+    return this.generateTraditional();
+  }
+
+  private async generateLLMEnhanced(): Promise<GeneratedFiles | null> {
+    try {
+      // Check if Ollama is available
+      const statusResponse = await fetch('http://localhost:5001/ollama-status');
+      if (!statusResponse.ok) {
+        throw new Error('Ollama not available');
+      }
+
+      const response = await fetch('http://localhost:5001/generate-docker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis: this.analysis,
+          projectName: 'project',
+          files: []
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`LLM Docker generation failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const dockerConfig = data.dockerConfig;
+
+      return {
+        dockerfile: dockerConfig.dockerfile || this.generateTraditionalDockerfile(),
+        dockerCompose: dockerConfig.dockerCompose || this.generateTraditionalDockerCompose(),
+        dockerignore: dockerConfig.dockerignore || this.generateTraditionalDockerignore(),
+        readme: dockerConfig.readme || this.generateTraditionalReadme(),
+        healthCheck: dockerConfig.healthCheck,
+        buildScript: dockerConfig.buildScript,
+        securityRecommendations: dockerConfig.securityRecommendations,
+        optimizations: dockerConfig.optimizations,
+        estimatedSize: dockerConfig.estimatedSize,
+        buildTime: dockerConfig.buildTime
+      };
+    } catch (error) {
+      console.error('LLM-enhanced Docker generation failed:', error);
+      return null;
+    }
+  }
+
+  private generateTraditional(): GeneratedFiles {
+    const config = this.generateDockerConfig();
+    
+    return {
+      dockerfile: this.generateTraditionalDockerfile(config),
+      dockerCompose: this.generateTraditionalDockerCompose(config),
+      dockerignore: this.generateTraditionalDockerignore(),
+      readme: this.generateTraditionalReadme(config)
+    };
+  }
+
   generateDockerConfig(): DockerConfig {
     const config: DockerConfig = {
       baseImage: this.getBaseImage(),
@@ -22,17 +91,6 @@ export class DockerGenerator {
     this.addEnvironmentVars(config);
 
     return config;
-  }
-
-  generateFiles(): GeneratedFiles {
-    const config = this.generateDockerConfig();
-    
-    return {
-      dockerfile: this.generateDockerfile(config),
-      dockerCompose: this.generateDockerCompose(config),
-      dockerignore: this.generateDockerignore(),
-      readme: this.generateReadme(config)
-    };
   }
 
   private getBaseImage(): string {
@@ -239,7 +297,9 @@ export class DockerGenerator {
     }
   }
 
-  private generateDockerfile(config: DockerConfig): string {
+  private generateTraditionalDockerfile(config?: DockerConfig): string {
+    if (!config) config = this.generateDockerConfig();
+    
     let dockerfile = `# Generated Dockerfile for ${this.analysis.framework || this.analysis.primaryLanguage} application
 FROM ${config.baseImage}
 
@@ -270,6 +330,10 @@ WORKDIR ${config.workdir}
     // Expose port
     dockerfile += `EXPOSE ${config.exposePort}\n\n`;
 
+    // Add health check
+    dockerfile += `HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\\n`;
+    dockerfile += `  CMD curl -f http://localhost:${config.exposePort}/health || exit 1\n\n`;
+
     // Add start command
     dockerfile += `CMD ["${config.startCommand.split(' ')[0]}"`;
     const args = config.startCommand.split(' ').slice(1);
@@ -281,7 +345,9 @@ WORKDIR ${config.workdir}
     return dockerfile;
   }
 
-  private generateDockerCompose(config: DockerConfig): string {
+  private generateTraditionalDockerCompose(config?: DockerConfig): string {
+    if (!config) config = this.generateDockerConfig();
+    
     const serviceName = 'app';
     let compose = `version: '3.8'
 
@@ -300,6 +366,15 @@ services:
       });
     }
 
+    compose += `    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${config.exposePort}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+`;
+
     // Add database services if detected
     if (this.analysis.database?.includes('PostgreSQL')) {
       compose += `
@@ -313,6 +388,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:
@@ -330,6 +411,12 @@ volumes:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   mongodb_data:
@@ -344,6 +431,12 @@ volumes:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   redis_data:
@@ -353,7 +446,7 @@ volumes:
     return compose;
   }
 
-  private generateDockerignore(): string {
+  private generateTraditionalDockerignore(): string {
     const { primaryLanguage } = this.analysis;
     
     let dockerignore = `# Generated .dockerignore
@@ -369,6 +462,9 @@ README.md
 .env.production.local
 .DS_Store
 *.log
+Dockerfile
+docker-compose.yml
+.dockerignore
 `;
 
     switch (primaryLanguage) {
@@ -451,7 +547,9 @@ Cargo.lock
     return dockerignore;
   }
 
-  private generateReadme(config: DockerConfig): string {
+  private generateTraditionalReadme(config?: DockerConfig): string {
+    if (!config) config = this.generateDockerConfig();
+    
     const { framework, primaryLanguage } = this.analysis;
     
     return `# Docker Configuration
@@ -480,6 +578,14 @@ docker-compose logs -f
 # Stop services
 docker-compose down
 \`\`\`
+
+## Health Checks
+
+The application includes built-in health checks:
+- **Endpoint**: \`http://localhost:${config.exposePort}/health\`
+- **Interval**: 30 seconds
+- **Timeout**: 10 seconds
+- **Retries**: 3
 
 ## Configuration Details
 
@@ -524,10 +630,90 @@ services:
 ## Production Considerations
 
 - Use multi-stage builds for smaller images
-- Set up health checks
+- Set up health checks (already included)
 - Configure proper logging
 - Use secrets for sensitive data
 - Set resource limits
+- Enable security scanning
+
+## Testing Docker Configuration
+
+You can test the Docker configuration using:
+
+\`\`\`bash
+# Test build
+docker build -t test-app .
+
+# Test health check
+docker run -d --name test-container -p ${config.exposePort}:${config.exposePort} test-app
+sleep 60  # Wait for startup
+curl -f http://localhost:${config.exposePort}/health
+
+# Cleanup
+docker stop test-container
+docker rm test-container
+\`\`\`
 `;
+  }
+
+  async testDockerConfiguration(dockerfile: string, dockerCompose?: string): Promise<any> {
+    try {
+      const response = await fetch('http://localhost:5001/test-docker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dockerfile,
+          dockerCompose,
+          projectName: 'test-project'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Docker test failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.testResults;
+    } catch (error) {
+      console.error('Docker configuration test failed:', error);
+      return {
+        validation: { isValid: false, errors: [error.message] },
+        security: { score: 0, vulnerabilities: [] },
+        performance: { score: 0, issues: [] }
+      };
+    }
+  }
+
+  async generateHealthCheck(): Promise<any> {
+    try {
+      const response = await fetch('http://localhost:5001/generate-healthcheck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis: this.analysis,
+          framework: this.analysis.framework,
+          port: this.getDefaultPort()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Health check generation failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.healthConfig;
+    } catch (error) {
+      console.error('Health check generation failed:', error);
+      return {
+        endpoint: '/health',
+        dockerHealthCheck: {
+          command: `curl -f http://localhost:${this.getDefaultPort()}/health || exit 1`,
+          interval: '30s',
+          timeout: '10s',
+          retries: 3,
+          startPeriod: '60s'
+        }
+      };
+    }
   }
 }

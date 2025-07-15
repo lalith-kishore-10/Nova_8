@@ -14,6 +14,78 @@ export class StackAnalyzer {
   }
 
   async analyzeStack(): Promise<StackAnalysis> {
+    // First try LLM-enhanced analysis
+    try {
+      const llmAnalysis = await this.analyzeLLMEnhanced();
+      if (llmAnalysis) {
+        return llmAnalysis;
+      }
+    } catch (error) {
+      console.warn('LLM analysis failed, falling back to traditional analysis:', error);
+    }
+
+    // Fallback to traditional analysis
+    return this.analyzeTraditional();
+  }
+
+  private async analyzeLLMEnhanced(): Promise<StackAnalysis | null> {
+    try {
+      // Check if Ollama is available
+      const statusResponse = await fetch('http://localhost:5001/ollama-status');
+      if (!statusResponse.ok) {
+        throw new Error('Ollama not available');
+      }
+
+      // Prepare data for LLM analysis
+      const analysisData = {
+        files: this.files.map(f => ({ path: f.path, type: f.type })),
+        packageJson: this.fileContents.get('package.json'),
+        requirements: this.fileContents.get('requirements.txt'),
+        pomXml: this.fileContents.get('pom.xml'),
+        cargoToml: this.fileContents.get('Cargo.toml'),
+        goMod: this.fileContents.get('go.mod')
+      };
+
+      const response = await fetch('http://localhost:5001/analyze-stack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`LLM analysis failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // Convert LLM response to our StackAnalysis format
+      const llmResult = data.analysis;
+      
+      return {
+        primaryLanguage: llmResult.primaryLanguage || this.detectPrimaryLanguage(),
+        framework: llmResult.framework,
+        packageManager: llmResult.packageManager,
+        runtime: llmResult.runtime,
+        database: llmResult.database || [],
+        dependencies: llmResult.dependencies || [],
+        devDependencies: this.extractDevDependencies(llmResult.dependencies || []),
+        scripts: this.extractScripts(),
+        buildTool: llmResult.buildTool,
+        testFramework: llmResult.testFramework,
+        linting: llmResult.linting || [],
+        styling: llmResult.styling || [],
+        architecture: llmResult.architecture,
+        deployment: llmResult.deployment,
+        recommendations: llmResult.recommendations || [],
+        dockerStrategy: llmResult.dockerStrategy
+      };
+    } catch (error) {
+      console.error('LLM-enhanced analysis failed:', error);
+      return null;
+    }
+  }
+
+  private async analyzeTraditional(): Promise<StackAnalysis> {
     const analysis: StackAnalysis = {
       primaryLanguage: this.detectPrimaryLanguage(),
       dependencies: [],
@@ -57,6 +129,23 @@ export class StackAnalyzer {
     this.detectDatabase(analysis);
 
     return analysis;
+  }
+
+  private extractDevDependencies(allDependencies: Dependency[]): Dependency[] {
+    return allDependencies.filter(dep => dep.type === 'dev');
+  }
+
+  private extractScripts(): Record<string, string> {
+    const packageJson = this.fileContents.get('package.json');
+    if (packageJson) {
+      try {
+        const pkg = JSON.parse(packageJson);
+        return pkg.scripts || {};
+      } catch (error) {
+        console.error('Error parsing package.json for scripts:', error);
+      }
+    }
+    return {};
   }
 
   private detectPrimaryLanguage(): string {
