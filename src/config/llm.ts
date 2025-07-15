@@ -45,7 +45,7 @@ export const getLLMConfig = (): LLMConfig => {
     provider,
     ...configs[provider],
     apiKey: configs[provider].apiKey || '',
-    model: configs[provider].model || 'deepseek-ai/deepseek-coder-33b-instruct'
+    model: configs[provider].model || 'deepseek-ai/deepseek-coder-6.7b-instruct'
   } as LLMConfig;
 };
 
