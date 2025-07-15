@@ -51,9 +51,24 @@ export function DockerFiles({ files, repoName }: DockerFilesProps) {
   const testDockerConfiguration = async () => {
     setIsTestingDocker(true);
     try {
+      // First check if backend is available
+      const statusResponse = await fetch('http://localhost:5001/ollama-status', {
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (!statusResponse.ok) {
+        throw new Error('Backend server not running. Please start with: npm run backend');
+      }
+      
+      const statusData = await statusResponse.json();
+      if (statusData.status !== 'connected') {
+        throw new Error('Ollama not connected. Please start Ollama with: ollama serve');
+      }
+      
       const response = await fetch('http://localhost:5001/test-docker', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(30000),
         body: JSON.stringify({
           dockerfile: files.dockerfile,
           dockerCompose: files.dockerCompose,
@@ -66,10 +81,12 @@ export function DockerFiles({ files, repoName }: DockerFilesProps) {
         setTestResults(data.testResults);
         setActiveTab('test');
       } else {
-        console.error('Docker test failed:', response.statusText);
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || 'Docker test failed');
       }
     } catch (error) {
       console.error('Docker test error:', error);
+      alert(`Docker test failed: ${error.message}`);
     } finally {
       setIsTestingDocker(false);
     }

@@ -31,13 +31,20 @@ export class StackAnalyzer {
   private async analyzeLLMEnhanced(): Promise<StackAnalysis | null> {
     try {
       // Check if Ollama is available
-      const statusResponse = await fetch('http://localhost:5001/ollama-status', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5000) // 5 second timeout
-      });
-      if (!statusResponse.ok) {
-        throw new Error('Ollama not available');
+      let statusResponse;
+      try {
+        statusResponse = await fetch('http://localhost:5001/ollama-status', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000)
+        });
+      } catch (fetchError) {
+        throw new Error('Backend server not running');
+      }
+      
+      const statusData = await statusResponse.json();
+      if (statusData.status !== 'connected') {
+        throw new Error('Ollama not connected');
       }
 
       // Prepare data for LLM analysis

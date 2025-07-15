@@ -4,7 +4,7 @@ const axios = require('axios');
 
 const app = express();
 const PORT = 5001;
-const OLLAMA_URL = 'https://wsn8td4j-11434.inc1.devtunnels.ms';
+const OLLAMA_URL = 'http://localhost:11434';
 const OLLAMA_MODEL = 'codellama:7b';
 
 // Middleware
@@ -19,7 +19,7 @@ app.get('/health', (req, res) => {
 // Check if Ollama is running
 app.get('/ollama-status', async (req, res) => {
   try {
-    const response = await axios.get(`${OLLAMA_URL}/api/tags`);
+    const response = await axios.get(`${OLLAMA_URL}/api/tags`, { timeout: 5000 });
     res.json({ 
       status: 'connected', 
       models: response.data.models || [],
@@ -29,7 +29,7 @@ app.get('/ollama-status', async (req, res) => {
   } catch (error) {
     res.status(503).json({ 
       status: 'disconnected', 
-      error: `Ollama server not accessible at ${OLLAMA_URL}`,
+      error: `Cannot connect to Ollama at ${OLLAMA_URL}. Make sure Ollama is running with: ollama serve`,
       details: error.message
     });
   }
@@ -106,7 +106,7 @@ Focus on:
         top_p: 0.9,
         max_tokens: 4000
       }
-    });
+    }, { timeout: 30000 });
 
     // Try to parse JSON response
     let analysis;
@@ -200,7 +200,7 @@ Requirements:
         top_p: 0.9,
         max_tokens: 6000
       }
-    });
+    }, { timeout: 45000 });
 
     // Try to parse JSON response
     let dockerConfig;

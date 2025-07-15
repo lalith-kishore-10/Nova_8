@@ -276,10 +276,11 @@ export function BugDetection({ files, repoName, onFileContentFetch }: BugDetecti
         <div className="bg-gray-50 rounded-lg p-4 text-left max-w-md mx-auto">
           <h4 className="font-semibold mb-2">Setup Instructions:</h4>
           <ol className="text-sm space-y-1 list-decimal list-inside">
-            <li>Install Ollama from <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">ollama.ai</a></li>
+            <li>Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">ollama.com</a></li>
             <li>Run: <code className="bg-gray-200 px-1 rounded">ollama pull codellama</code></li>
             <li>Start: <code className="bg-gray-200 px-1 rounded">ollama serve</code></li>
-            <li>Start backend: <code className="bg-gray-200 px-1 rounded">node backend/ollama-api.js</code></li>
+            <li>Start backend: <code className="bg-gray-200 px-1 rounded">npm run backend</code></li>
+            <li>Or start both: <code className="bg-gray-200 px-1 rounded">npm run dev:full</code></li>
           </ol>
         </div>
         <button
