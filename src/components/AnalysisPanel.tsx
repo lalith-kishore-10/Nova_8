@@ -270,4 +270,3 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ analysis, loading 
     </div>
   );
 };
-</parameter>
