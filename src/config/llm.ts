@@ -11,7 +11,7 @@ export const getLLMConfig = (): LLMConfig => {
   return {
     provider: 'huggingface',
     apiKey: import.meta.env.VITE_HUGGINGFACE_API_KEY || '',
-    model: import.meta.env.VITE_LLM_MODEL || 'HuggingFaceH4/zephyr-7b-beta',
+    model: import.meta.env.VITE_LLM_MODEL || 'microsoft/DialoGPT-medium',
     baseUrl: 'https://api-inference.huggingface.co',
     maxTokens: 4000,
     temperature: 0.1
