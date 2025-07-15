@@ -13,137 +13,6 @@ export interface LLMProvider {
   generateResponse(prompt: string): Promise<LLMResponse>;
 }
 
-export class OpenAIProvider implements LLMProvider {
-  constructor(private config: LLMConfig) {}
-
-  async generateResponse(prompt: string): Promise<LLMResponse> {
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a senior software engineer and tech stack analyst. Provide detailed, accurate analysis of code repositories.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(`OpenAI API error: ${response.status} - ${error.error?.message || 'Request failed'}`);
-    }
-
-    const data = await response.json();
-    
-    return {
-      content: data.choices[0]?.message?.content || '',
-      usage: data.usage ? {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens
-      } : undefined
-    };
-  }
-}
-
-export class AnthropicProvider implements LLMProvider {
-  constructor(private config: LLMConfig) {}
-
-  async generateResponse(prompt: string): Promise<LLMResponse> {
-    const response = await fetch(`${this.config.baseUrl}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        messages: [
-          {
-            role: 'user',
-            content: `You are a senior software engineer and tech stack analyst. Provide detailed, accurate analysis of code repositories.\n\n${prompt}`
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(`Anthropic API error: ${response.status} - ${error.error?.message || 'Request failed'}`);
-    }
-
-    const data = await response.json();
-    
-    return {
-      content: data.content[0]?.text || '',
-      usage: data.usage ? {
-        promptTokens: data.usage.input_tokens,
-        completionTokens: data.usage.output_tokens,
-        totalTokens: data.usage.input_tokens + data.usage.output_tokens
-      } : undefined
-    };
-  }
-}
-
-export class LocalProvider implements LLMProvider {
-  constructor(private config: LLMConfig) {}
-
-  async generateResponse(prompt: string): Promise<LLMResponse> {
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a senior software engineer and tech stack analyst. Provide detailed, accurate analysis of code repositories.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Local LLM error: ${response.status} - ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    return {
-      content: data.choices[0]?.message?.content || '',
-      usage: data.usage ? {
-        promptTokens: data.usage.prompt_tokens || 0,
-        completionTokens: data.usage.completion_tokens || 0,
-        totalTokens: data.usage.total_tokens || 0
-      } : undefined
-    };
-  }
-}
-
 export class HuggingFaceProvider implements LLMProvider {
   constructor(private config: LLMConfig) {}
 
@@ -152,7 +21,7 @@ export class HuggingFaceProvider implements LLMProvider {
     
     // Format prompt for DeepSeek Coder
     const formattedPrompt = `### Instruction:
-You are a senior software engineer and tech stack analyst. Analyze the provided repository information and provide detailed, accurate analysis.
+You are a senior software engineer and tech stack analyst. Analyze the provided repository information and provide detailed, accurate analysis in a structured format.
 
 ### Input:
 ${prompt}
@@ -173,7 +42,8 @@ ${prompt}
           do_sample: true,
           top_p: 0.95,
           repetition_penalty: 1.1,
-          return_full_text: false
+          return_full_text: false,
+          stop: ["### Input:", "### Instruction:"]
         },
         options: {
           wait_for_model: true,
@@ -186,6 +56,9 @@ ${prompt}
       const errorText = await response.text();
       if (response.status === 503) {
         throw new Error('Model is loading, please try again in a few moments');
+      }
+      if (response.status === 401) {
+        throw new Error('Invalid Hugging Face API key. Please check your configuration.');
       }
       throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`);
     }
@@ -205,25 +78,14 @@ ${prompt}
     return {
       content: content.trim(),
       usage: {
-        promptTokens: formattedPrompt.length / 4, // Rough estimate
-        completionTokens: content.length / 4, // Rough estimate
-        totalTokens: (formattedPrompt.length + content.length) / 4
+        promptTokens: Math.ceil(formattedPrompt.length / 4),
+        completionTokens: Math.ceil(content.length / 4),
+        totalTokens: Math.ceil((formattedPrompt.length + content.length) / 4)
       }
     };
   }
 }
 
 export const createLLMProvider = (config: LLMConfig): LLMProvider => {
-  switch (config.provider) {
-    case 'openai':
-      return new OpenAIProvider(config);
-    case 'anthropic':
-      return new AnthropicProvider(config);
-    case 'huggingface':
-      return new HuggingFaceProvider(config);
-    case 'local':
-      return new LocalProvider(config);
-    default:
-      throw new Error(`Unsupported LLM provider: ${config.provider}`);
-  }
+  return new HuggingFaceProvider(config);
 };
