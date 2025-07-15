@@ -364,14 +364,17 @@ export const GitCloneSystem: React.FC = () => {
                 <button
                   onClick={() => handleAnalyzeRepository(fileTree)}
                   disabled={loadingAnalysis}
-                  className="flex items-center space-x-1 px-3 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                  className="flex items-center space-x-1 px-3 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 rounded-lg transition-all disabled:opacity-50 shadow-md"
                 >
                   {loadingAnalysis ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Brain className="w-4 h-4" />
+                    <>
+                      <Brain className="w-4 h-4" />
+                      <span className="text-xs bg-white/20 px-1 rounded">DeepSeek</span>
+                    </>
                   )}
-                  <span className="text-sm">AI Analysis</span>
+                  <span className="text-sm font-medium">AI Analysis</span>
                 </button>
               </div>
 

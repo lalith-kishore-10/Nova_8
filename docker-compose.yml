@@ -13,9 +13,8 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
-      - VITE_LLM_PROVIDER=openai
-      - VITE_OPENAI_API_KEY=${VITE_OPENAI_API_KEY}
-      - VITE_ANTHROPIC_API_KEY=${VITE_ANTHROPIC_API_KEY}
+      - VITE_LLM_PROVIDER=huggingface
+      - VITE_HUGGINGFACE_API_KEY=${VITE_HUGGINGFACE_API_KEY}
       - VITE_GITHUB_TOKEN=${VITE_GITHUB_TOKEN}
     profiles:
       - dev

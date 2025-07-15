@@ -1,5 +1,5 @@
 export interface LLMConfig {
-  provider: 'openai' | 'anthropic' | 'local';
+  provider: 'openai' | 'anthropic' | 'huggingface' | 'local';
   apiKey: string;
   model: string;
   baseUrl?: string;
@@ -8,7 +8,7 @@ export interface LLMConfig {
 }
 
 export const getLLMConfig = (): LLMConfig => {
-  const provider = (import.meta.env.VITE_LLM_PROVIDER || 'openai') as LLMConfig['provider'];
+  const provider = (import.meta.env.VITE_LLM_PROVIDER || 'huggingface') as LLMConfig['provider'];
   
   const configs: Record<string, Partial<LLMConfig>> = {
     openai: {
@@ -25,6 +25,13 @@ export const getLLMConfig = (): LLMConfig => {
       maxTokens: 4000,
       temperature: 0.1
     },
+    huggingface: {
+      apiKey: import.meta.env.VITE_HUGGINGFACE_API_KEY || '',
+      model: import.meta.env.VITE_LLM_MODEL || 'deepseek-ai/deepseek-coder-33b-instruct',
+      baseUrl: 'https://api-inference.huggingface.co/models',
+      maxTokens: 4000,
+      temperature: 0.1
+    },
     local: {
       apiKey: '',
       model: 'llama2',
@@ -38,7 +45,7 @@ export const getLLMConfig = (): LLMConfig => {
     provider,
     ...configs[provider],
     apiKey: configs[provider].apiKey || '',
-    model: configs[provider].model || 'gpt-4'
+    model: configs[provider].model || 'deepseek-ai/deepseek-coder-33b-instruct'
   } as LLMConfig;
 };
 
