@@ -31,20 +31,9 @@ export class StackAnalyzer {
   private async analyzeLLMEnhanced(): Promise<StackAnalysis | null> {
     try {
       // Check if Ollama is available
-      let statusResponse;
-      try {
-        statusResponse = await fetch('http://localhost:5001/ollama-status', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(5000)
-        });
-      } catch (fetchError) {
-        throw new Error('Backend server not running');
-      }
-      
-      const statusData = await statusResponse.json();
-      if (statusData.status !== 'connected') {
-        throw new Error('Ollama not connected');
+      const statusResponse = await fetch('http://localhost:5001/ollama-status');
+      if (!statusResponse.ok) {
+        throw new Error('Ollama not available');
       }
 
       // Prepare data for LLM analysis
@@ -60,7 +49,6 @@ export class StackAnalyzer {
       const response = await fetch('http://localhost:5001/analyze-stack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(30000), // 30 second timeout for analysis
         body: JSON.stringify(analysisData)
       });
 
@@ -91,14 +79,8 @@ export class StackAnalyzer {
         recommendations: llmResult.recommendations || [],
         dockerStrategy: llmResult.dockerStrategy
       };
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.warn('LLM analysis timed out, falling back to traditional analysis');
-      } else if (error.message?.includes('Failed to fetch')) {
-        console.warn('Backend server not accessible at http://localhost:5001. Please run "npm run dev:full" to start both frontend and backend servers.');
-      } else {
-        console.warn('LLM-enhanced analysis failed, falling back to traditional analysis:', error.message);
-      }
+    } catch (error) {
+      console.error('LLM-enhanced analysis failed:', error);
       return null;
     }
   }

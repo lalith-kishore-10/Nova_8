@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "backend": "cd backend && node ollama-api.js",
+    "backend": "node backend/ollama-api.js",
     "dev:full": "concurrently \"npm run dev\" \"npm run backend\"",
     "build": "vite build",
     "lint": "eslint .",
