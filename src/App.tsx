@@ -5,7 +5,6 @@ import { FileTree } from './components/FileTree';
 import { FileViewer } from './components/FileViewer';
 import { StackAnalysisComponent } from './components/StackAnalysis';
 import { DockerFiles } from './components/DockerFiles';
-import { BugDetection } from './components/BugDetection';
 import { ValidationReport } from './components/ValidationReport';
 import { OutputsAndLogs } from './components/OutputsAndLogs';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -32,7 +31,7 @@ function App() {
   const [dockerFiles, setDockerFiles] = useState<GeneratedFiles | null>(null);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [activeTab, setActiveTab] = useState<'files' | 'analysis' | 'docker' | 'bugs' | 'validation' | 'logs'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'analysis' | 'docker' | 'validation' | 'logs'>('files');
 
   const handleRepoSubmit = async (owner: string, repoName: string) => {
     setState('loading');
@@ -179,16 +178,6 @@ function App() {
     }
   };
 
-  const handleFileContentFetch = async (path: string): Promise<string> => {
-    if (!repo) throw new Error('No repository loaded');
-    
-    const owner = repo.full_name.split('/')[0];
-    const repoName = repo.full_name.split('/')[1];
-    
-    const fileData = await fetchFileContent(owner, repoName, path);
-    return fileData.content ? atob(fileData.content) : '';
-  };
-
   const handleBack = () => {
     logger.info('system', 'Returning to repository input');
     setState('input');
@@ -289,16 +278,6 @@ function App() {
             Docker Config
           </button>
           <button
-            onClick={() => setActiveTab('bugs')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'bugs'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Bug Detection
-          </button>
-          <button
             onClick={() => setActiveTab('validation')}
             className={`py-3 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'validation'
@@ -380,16 +359,6 @@ function App() {
         {activeTab === 'docker' && dockerFiles && (
           <div className="flex-1 bg-white overflow-auto p-6">
             <DockerFiles files={dockerFiles} repoName={repo.name} />
-          </div>
-        )}
-
-        {activeTab === 'bugs' && (
-          <div className="flex-1 bg-white overflow-auto p-6">
-            <BugDetection 
-              files={files} 
-              repoName={repo.name}
-              onFileContentFetch={handleFileContentFetch}
-            />
           </div>
         )}
 
