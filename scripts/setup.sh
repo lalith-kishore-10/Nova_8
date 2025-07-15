@@ -21,7 +21,7 @@ fi
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
     echo "📝 Creating .env file..."
-    cp .env .env.example
+    cp .env.example .env
     echo "✅ .env file created. Please edit it with your API keys."
 else
     echo "✅ .env file already exists."
