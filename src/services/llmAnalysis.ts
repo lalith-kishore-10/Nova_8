@@ -1,67 +1,114 @@
 import { TechStackAnalysis, DependencyAnalysis, RepositoryAnalysis, Dependency } from '../types/analysis';
 import { FileNode } from '../types/github';
+import { getLLMConfig, isLLMConfigured } from '../config/llm';
+import { createLLMProvider, LLMProvider } from './llmProviders';
+import { githubApi } from './githubApi';
 
 class LLMAnalysisService {
-  private async callLLM(prompt: string): Promise<string> {
-    // In a real implementation, this would call your preferred LLM API
-    // For demo purposes, we'll simulate LLM responses based on file analysis
-    return this.simulateLLMResponse(prompt);
+  private provider: LLMProvider | null = null;
+  private initialized = false;
+
+  private async initializeProvider(): Promise<void> {
+    if (this.initialized) return;
+
+    if (!isLLMConfigured()) {
+      throw new Error('LLM not configured. Please set up your API keys in the environment variables.');
+    }
+
+    const config = getLLMConfig();
+    this.provider = createLLMProvider(config);
+    this.initialized = true;
   }
 
-  private simulateLLMResponse(prompt: string): string {
-    // This simulates an LLM response based on the prompt content
-    // In production, replace with actual LLM API calls (OpenAI, Anthropic, etc.)
+  private async callLLM(prompt: string): Promise<string> {
+    await this.initializeProvider();
     
+    if (!this.provider) {
+      throw new Error('LLM provider not initialized');
+    }
+
+    try {
+      const response = await this.provider.generateResponse(prompt);
+      return response.content;
+    } catch (error) {
+      console.error('LLM API call failed:', error);
+      // Fallback to rule-based analysis
+      return this.fallbackAnalysis(prompt);
+    }
+  }
+
+  private fallbackAnalysis(prompt: string): string {
+    // Provide basic analysis when LLM is unavailable
     if (prompt.includes('package.json')) {
-      return `Based on the package.json analysis, this appears to be a Node.js/JavaScript project using React framework with TypeScript. Key dependencies include React, TypeScript, Vite for building, and various development tools like ESLint and testing frameworks.`;
+      return 'This appears to be a Node.js/JavaScript project based on the package.json file. The project likely uses modern JavaScript frameworks and build tools.';
     }
     
     if (prompt.includes('requirements.txt') || prompt.includes('.py')) {
-      return `This is a Python project. Dependencies suggest it uses Flask/Django for web development, with data science libraries like pandas and numpy. Testing is done with pytest.`;
+      return 'This is a Python project. Based on common patterns, it likely uses popular Python frameworks and libraries for web development or data processing.';
     }
     
     if (prompt.includes('pom.xml') || prompt.includes('.java')) {
-      return `Java project using Maven for dependency management. Appears to be a Spring Boot application with JPA for database access and JUnit for testing.`;
+      return 'This is a Java project using Maven for dependency management. It likely follows standard Java enterprise patterns.';
     }
     
-    return `Mixed technology stack detected. Multiple languages and frameworks are present, suggesting a polyglot or microservices architecture.`;
+    return 'This appears to be a software project with multiple technologies. A detailed analysis would require examining the specific files and dependencies.';
   }
 
-  async analyzeTechStack(files: FileNode[], fileContents: Map<string, string>): Promise<TechStackAnalysis> {
-    const configFiles = files.filter(file => 
-      ['package.json', 'requirements.txt', 'pom.xml', 'Cargo.toml', 'go.mod', 'composer.json'].includes(file.name) ||
-      file.name.endsWith('.csproj') || file.name.endsWith('.sln')
+  async fetchFileContents(owner: string, repo: string, files: FileNode[]): Promise<Map<string, string>> {
+    const fileContents = new Map<string, string>();
+    const importantFiles = files.filter(file => 
+      file.type === 'file' && (
+        ['package.json', 'requirements.txt', 'pom.xml', 'Cargo.toml', 'go.mod', 'composer.json'].includes(file.name) ||
+        file.name.endsWith('.csproj') || 
+        file.name.endsWith('.sln') ||
+        file.name.toLowerCase().includes('readme') ||
+        file.name.toLowerCase().includes('dockerfile') ||
+        file.name.includes('docker-compose')
+      )
     );
 
-    const sourceFiles = files.filter(file => 
-      file.name.endsWith('.js') || file.name.endsWith('.ts') || file.name.endsWith('.py') ||
-      file.name.endsWith('.java') || file.name.endsWith('.go') || file.name.endsWith('.rs') ||
-      file.name.endsWith('.php') || file.name.endsWith('.cs')
-    );
+    // Limit to prevent API rate limiting
+    const filesToFetch = importantFiles.slice(0, 10);
 
-    let prompt = `Analyze this repository's tech stack based on the following files:\n\n`;
+    for (const file of filesToFetch) {
+      try {
+        const content = await githubApi.getFileContent(owner, repo, file.path);
+        fileContents.set(file.path, content);
+      } catch (error) {
+        console.warn(`Failed to fetch ${file.path}:`, error);
+      }
+    }
+
+    return fileContents;
+  }
+
+  async analyzeTechStack(owner: string, repo: string, files: FileNode[]): Promise<TechStackAnalysis> {
+    const fileContents = await this.fetchFileContents(owner, repo, files);
     
-    // Add config file contents to prompt
-    for (const file of configFiles.slice(0, 3)) { // Limit to avoid token limits
-      const content = fileContents.get(file.path);
-      if (content) {
-        prompt += `File: ${file.name}\n${content.substring(0, 1000)}\n\n`;
-      }
+    let prompt = `Analyze this repository's technology stack. Based on the following files and their contents, identify:
+
+1. Primary programming languages (in order of usage)
+2. Frameworks and libraries used
+3. Build tools and package managers
+4. Databases and data storage solutions
+5. Cloud services and deployment tools
+6. Development and testing tools
+
+Files and contents:
+`;
+
+    // Add file contents to prompt
+    for (const [path, content] of fileContents.entries()) {
+      prompt += `\n--- ${path} ---\n${content.substring(0, 2000)}\n`;
     }
 
-    // Add sample source files
-    for (const file of sourceFiles.slice(0, 5)) {
-      const content = fileContents.get(file.path);
-      if (content) {
-        prompt += `File: ${file.name}\n${content.substring(0, 500)}\n\n`;
-      }
-    }
+    prompt += `\nFile structure overview:
+${files.slice(0, 20).map(f => `${f.type === 'directory' ? '📁' : '📄'} ${f.path}`).join('\n')}
 
-    prompt += `Please identify the primary languages, frameworks, libraries, build tools, databases, and cloud services used in this project.`;
+Please provide a structured analysis focusing on the main technologies, their purposes, and confidence level.`;
 
     const llmResponse = await this.callLLM(prompt);
     
-    // Parse the response and extract structured data
     return this.parseTechStackResponse(llmResponse, files, fileContents);
   }
 
@@ -79,67 +126,74 @@ class LLMAnalysisService {
       summary: response
     };
 
-    // Detect languages from file extensions
+    // Enhanced language detection from file extensions
     const languageMap: { [key: string]: string } = {
-      '.js': 'JavaScript',
-      '.ts': 'TypeScript',
-      '.jsx': 'JavaScript (React)',
-      '.tsx': 'TypeScript (React)',
-      '.py': 'Python',
-      '.java': 'Java',
-      '.go': 'Go',
-      '.rs': 'Rust',
-      '.php': 'PHP',
-      '.cs': 'C#',
-      '.cpp': 'C++',
-      '.c': 'C',
-      '.rb': 'Ruby',
-      '.swift': 'Swift',
-      '.kt': 'Kotlin'
+      '.js': 'JavaScript', '.jsx': 'JavaScript (React)', '.ts': 'TypeScript', '.tsx': 'TypeScript (React)',
+      '.py': 'Python', '.java': 'Java', '.go': 'Go', '.rs': 'Rust', '.php': 'PHP', '.cs': 'C#',
+      '.cpp': 'C++', '.c': 'C', '.rb': 'Ruby', '.swift': 'Swift', '.kt': 'Kotlin', '.scala': 'Scala',
+      '.clj': 'Clojure', '.hs': 'Haskell', '.elm': 'Elm', '.dart': 'Dart', '.lua': 'Lua'
     };
 
     const languageCounts: { [key: string]: number } = {};
     files.forEach(file => {
-      const ext = '.' + file.name.split('.').pop();
-      if (languageMap[ext]) {
-        languageCounts[languageMap[ext]] = (languageCounts[languageMap[ext]] || 0) + 1;
+      if (file.type === 'file') {
+        const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+        if (languageMap[ext]) {
+          languageCounts[languageMap[ext]] = (languageCounts[languageMap[ext]] || 0) + 1;
+        }
       }
     });
 
     analysis.primaryLanguages = Object.entries(languageCounts)
       .sort(([,a], [,b]) => b - a)
-      .slice(0, 3)
+      .slice(0, 5)
       .map(([lang]) => lang);
 
-    // Detect frameworks and tools from package.json
+    // Enhanced package.json analysis
     const packageJson = fileContents.get('package.json');
     if (packageJson) {
       try {
         const pkg = JSON.parse(packageJson);
         const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
         
-        // Framework detection
-        if (allDeps.react) analysis.frameworks.push('React');
-        if (allDeps.vue) analysis.frameworks.push('Vue.js');
-        if (allDeps.angular || allDeps['@angular/core']) analysis.frameworks.push('Angular');
-        if (allDeps.svelte) analysis.frameworks.push('Svelte');
-        if (allDeps.next) analysis.frameworks.push('Next.js');
-        if (allDeps.nuxt) analysis.frameworks.push('Nuxt.js');
-        if (allDeps.express) analysis.frameworks.push('Express.js');
-        if (allDeps.fastify) analysis.frameworks.push('Fastify');
+        // Framework detection with more comprehensive mapping
+        const frameworkMap: { [key: string]: string } = {
+          'react': 'React', 'vue': 'Vue.js', '@angular/core': 'Angular', 'svelte': 'Svelte',
+          'next': 'Next.js', 'nuxt': 'Nuxt.js', 'gatsby': 'Gatsby', 'remix': 'Remix',
+          'express': 'Express.js', 'fastify': 'Fastify', 'koa': 'Koa.js', 'hapi': 'Hapi.js',
+          'nestjs': 'NestJS', '@nestjs/core': 'NestJS', 'apollo-server': 'Apollo Server'
+        };
 
-        // Build tools
-        if (allDeps.vite) analysis.buildTools.push('Vite');
-        if (allDeps.webpack) analysis.buildTools.push('Webpack');
-        if (allDeps.rollup) analysis.buildTools.push('Rollup');
-        if (allDeps.parcel) analysis.buildTools.push('Parcel');
+        Object.keys(allDeps).forEach(dep => {
+          if (frameworkMap[dep]) {
+            analysis.frameworks.push(frameworkMap[dep]);
+          }
+        });
 
-        // Dev tools
-        if (allDeps.eslint) analysis.devTools.push('ESLint');
-        if (allDeps.prettier) analysis.devTools.push('Prettier');
-        if (allDeps.jest) analysis.devTools.push('Jest');
-        if (allDeps.vitest) analysis.devTools.push('Vitest');
-        if (allDeps.cypress) analysis.devTools.push('Cypress');
+        // Build tools detection
+        const buildToolMap: { [key: string]: string } = {
+          'vite': 'Vite', 'webpack': 'Webpack', 'rollup': 'Rollup', 'parcel': 'Parcel',
+          'esbuild': 'ESBuild', 'turbo': 'Turbo', 'nx': 'Nx', 'lerna': 'Lerna'
+        };
+
+        Object.keys(allDeps).forEach(dep => {
+          if (buildToolMap[dep]) {
+            analysis.buildTools.push(buildToolMap[dep]);
+          }
+        });
+
+        // Dev tools detection
+        const devToolMap: { [key: string]: string } = {
+          'eslint': 'ESLint', 'prettier': 'Prettier', 'typescript': 'TypeScript',
+          'jest': 'Jest', 'vitest': 'Vitest', 'cypress': 'Cypress', 'playwright': 'Playwright',
+          'storybook': 'Storybook', '@storybook/react': 'Storybook'
+        };
+
+        Object.keys(allDeps).forEach(dep => {
+          if (devToolMap[dep]) {
+            analysis.devTools.push(devToolMap[dep]);
+          }
+        });
 
         analysis.packageManagers.push('npm');
       } catch (e) {
@@ -147,30 +201,52 @@ class LLMAnalysisService {
       }
     }
 
-    // Detect other package managers
+    // Detect other package managers and config files
     if (files.some(f => f.name === 'yarn.lock')) analysis.packageManagers.push('Yarn');
     if (files.some(f => f.name === 'pnpm-lock.yaml')) analysis.packageManagers.push('pnpm');
     if (files.some(f => f.name === 'requirements.txt')) analysis.packageManagers.push('pip');
+    if (files.some(f => f.name === 'Pipfile')) analysis.packageManagers.push('Pipenv');
+    if (files.some(f => f.name === 'poetry.lock')) analysis.packageManagers.push('Poetry');
     if (files.some(f => f.name === 'Cargo.toml')) analysis.packageManagers.push('Cargo');
     if (files.some(f => f.name === 'go.mod')) analysis.packageManagers.push('Go Modules');
 
-    // Detect databases from common config files
+    // Database detection from various sources
     const dockerCompose = fileContents.get('docker-compose.yml') || fileContents.get('docker-compose.yaml');
     if (dockerCompose) {
-      if (dockerCompose.includes('postgres')) analysis.databases.push('PostgreSQL');
-      if (dockerCompose.includes('mysql')) analysis.databases.push('MySQL');
-      if (dockerCompose.includes('mongodb')) analysis.databases.push('MongoDB');
-      if (dockerCompose.includes('redis')) analysis.databases.push('Redis');
+      const dbPatterns = {
+        'postgres': 'PostgreSQL', 'mysql': 'MySQL', 'mongodb': 'MongoDB', 'redis': 'Redis',
+        'elasticsearch': 'Elasticsearch', 'cassandra': 'Cassandra', 'neo4j': 'Neo4j'
+      };
+      
+      Object.entries(dbPatterns).forEach(([pattern, db]) => {
+        if (dockerCompose.toLowerCase().includes(pattern)) {
+          analysis.databases.push(db);
+        }
+      });
     }
+
+    // Cloud services detection
+    if (files.some(f => f.name === 'vercel.json')) analysis.cloudServices.push('Vercel');
+    if (files.some(f => f.name === 'netlify.toml')) analysis.cloudServices.push('Netlify');
+    if (files.some(f => f.name.includes('aws'))) analysis.cloudServices.push('AWS');
+    if (files.some(f => f.name.includes('gcp') || f.name.includes('google'))) analysis.cloudServices.push('Google Cloud');
+    if (files.some(f => f.name.includes('azure'))) analysis.cloudServices.push('Azure');
+
+    // Remove duplicates
+    analysis.frameworks = [...new Set(analysis.frameworks)];
+    analysis.buildTools = [...new Set(analysis.buildTools)];
+    analysis.devTools = [...new Set(analysis.devTools)];
+    analysis.databases = [...new Set(analysis.databases)];
+    analysis.cloudServices = [...new Set(analysis.cloudServices)];
+    analysis.packageManagers = [...new Set(analysis.packageManagers)];
 
     return analysis;
   }
 
-  async analyzeDependencies(files: FileNode[], fileContents: Map<string, string>): Promise<DependencyAnalysis> {
+  async analyzeDependencies(owner: string, repo: string, files: FileNode[]): Promise<DependencyAnalysis> {
+    const fileContents = await this.fetchFileContents(owner, repo, files);
     const dependencies: Dependency[] = [];
     let totalCount = 0;
-    let outdatedCount = 0;
-    let securityIssues = 0;
 
     // Analyze package.json dependencies
     const packageJson = fileContents.get('package.json');
@@ -185,8 +261,8 @@ class LLMAnalysisService {
               name,
               version: version as string,
               type: 'production',
-              isOutdated: Math.random() > 0.7, // Simulate outdated check
-              hasSecurityIssue: Math.random() > 0.9 // Simulate security check
+              isOutdated: this.simulateOutdatedCheck(name),
+              hasSecurityIssue: this.simulateSecurityCheck(name)
             });
           });
           totalCount += Object.keys(pkg.dependencies).length;
@@ -199,8 +275,8 @@ class LLMAnalysisService {
               name,
               version: version as string,
               type: 'development',
-              isOutdated: Math.random() > 0.7,
-              hasSecurityIssue: Math.random() > 0.95
+              isOutdated: this.simulateOutdatedCheck(name),
+              hasSecurityIssue: this.simulateSecurityCheck(name)
             });
           });
           totalCount += Object.keys(pkg.devDependencies).length;
@@ -210,12 +286,40 @@ class LLMAnalysisService {
       }
     }
 
-    // Count issues
-    outdatedCount = dependencies.filter(dep => dep.isOutdated).length;
-    securityIssues = dependencies.filter(dep => dep.hasSecurityIssue).length;
+    // Analyze Python requirements
+    const requirementsTxt = fileContents.get('requirements.txt');
+    if (requirementsTxt) {
+      const lines = requirementsTxt.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+      lines.forEach(line => {
+        const match = line.match(/^([a-zA-Z0-9\-_]+)([>=<~!]+.*)?$/);
+        if (match) {
+          dependencies.push({
+            name: match[1],
+            version: match[2] || 'latest',
+            type: 'production',
+            isOutdated: this.simulateOutdatedCheck(match[1]),
+            hasSecurityIssue: this.simulateSecurityCheck(match[1])
+          });
+          totalCount++;
+        }
+      });
+    }
 
-    const prompt = `Analyze the dependencies of this project and provide insights about potential issues, outdated packages, and security concerns:\n\n${JSON.stringify(dependencies.slice(0, 20), null, 2)}`;
-    
+    const outdatedCount = dependencies.filter(dep => dep.isOutdated).length;
+    const securityIssues = dependencies.filter(dep => dep.hasSecurityIssue).length;
+
+    const prompt = `Analyze the dependencies of this repository and provide insights:
+
+Dependencies (${dependencies.length} total):
+${dependencies.slice(0, 15).map(dep => `- ${dep.name}@${dep.version} (${dep.type})`).join('\n')}
+
+Please provide insights about:
+1. Overall dependency health
+2. Potential security concerns
+3. Outdated packages impact
+4. Recommendations for improvement
+5. Notable dependencies and their purposes`;
+
     const summary = await this.callLLM(prompt);
 
     return {
@@ -228,76 +332,91 @@ class LLMAnalysisService {
     };
   }
 
-  async analyzeRepository(files: FileNode[], selectedFiles: string[]): Promise<RepositoryAnalysis> {
-    // Fetch content for key files
-    const fileContents = new Map<string, string>();
-    
-    // This would be populated by fetching actual file contents
-    // For demo, we'll simulate some content
-    const packageJsonFile = files.find(f => f.name === 'package.json');
-    if (packageJsonFile) {
-      // In real implementation, fetch actual content
-      fileContents.set('package.json', JSON.stringify({
-        name: "example-project",
-        dependencies: {
-          react: "^18.0.0",
-          typescript: "^4.9.0",
-          vite: "^4.0.0"
-        },
-        devDependencies: {
-          eslint: "^8.0.0",
-          jest: "^29.0.0"
-        }
-      }, null, 2));
+  private simulateOutdatedCheck(packageName: string): boolean {
+    // Simulate outdated package detection
+    // In real implementation, this would check against npm registry
+    const commonOutdated = ['lodash', 'moment', 'request', 'babel-core'];
+    return commonOutdated.includes(packageName) || Math.random() > 0.8;
+  }
+
+  private simulateSecurityCheck(packageName: string): boolean {
+    // Simulate security vulnerability detection
+    // In real implementation, this would check against security databases
+    const knownVulnerable = ['event-stream', 'flatmap-stream'];
+    return knownVulnerable.includes(packageName) || Math.random() > 0.95;
+  }
+
+  async analyzeRepository(owner: string, repo: string, files: FileNode[]): Promise<RepositoryAnalysis> {
+    try {
+      const [techStack, dependencies] = await Promise.all([
+        this.analyzeTechStack(owner, repo, files),
+        this.analyzeDependencies(owner, repo, files)
+      ]);
+
+      // Determine project complexity
+      let complexity: 'Low' | 'Medium' | 'High' = 'Low';
+      const complexityFactors = [
+        dependencies.totalCount > 50,
+        techStack.primaryLanguages.length > 2,
+        techStack.frameworks.length > 2,
+        files.length > 100
+      ];
+      
+      const complexityScore = complexityFactors.filter(Boolean).length;
+      if (complexityScore >= 3) complexity = 'High';
+      else if (complexityScore >= 2) complexity = 'Medium';
+
+      // Calculate maintainability score (0-100)
+      let maintainability = 85;
+      maintainability -= Math.min(dependencies.outdatedCount * 1.5, 20);
+      maintainability -= Math.min(dependencies.securityIssues * 3, 25);
+      maintainability -= (complexity === 'High' ? 15 : complexity === 'Medium' ? 8 : 0);
+      maintainability = Math.max(0, Math.min(100, maintainability));
+
+      return {
+        techStack,
+        dependencies,
+        projectType: this.determineProjectType(techStack),
+        complexity,
+        maintainability: Math.round(maintainability),
+        analyzedAt: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Repository analysis failed:', error);
+      throw new Error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-
-    const [techStack, dependencies] = await Promise.all([
-      this.analyzeTechStack(files, fileContents),
-      this.analyzeDependencies(files, fileContents)
-    ]);
-
-    // Determine project complexity
-    let complexity: 'Low' | 'Medium' | 'High' = 'Low';
-    if (dependencies.totalCount > 50 || techStack.primaryLanguages.length > 2) {
-      complexity = 'Medium';
-    }
-    if (dependencies.totalCount > 100 || techStack.frameworks.length > 3) {
-      complexity = 'High';
-    }
-
-    // Calculate maintainability score (0-100)
-    let maintainability = 85;
-    maintainability -= dependencies.outdatedCount * 2;
-    maintainability -= dependencies.securityIssues * 5;
-    maintainability -= (complexity === 'High' ? 15 : complexity === 'Medium' ? 5 : 0);
-    maintainability = Math.max(0, Math.min(100, maintainability));
-
-    return {
-      techStack,
-      dependencies,
-      projectType: this.determineProjectType(techStack),
-      complexity,
-      maintainability,
-      analyzedAt: new Date().toISOString()
-    };
   }
 
   private determineProjectType(techStack: TechStackAnalysis): string {
-    if (techStack.frameworks.some(f => ['React', 'Vue.js', 'Angular'].includes(f))) {
+    const { frameworks, primaryLanguages } = techStack;
+    
+    if (frameworks.some(f => ['React', 'Vue.js', 'Angular', 'Svelte'].includes(f))) {
       return 'Frontend Web Application';
     }
-    if (techStack.frameworks.some(f => ['Express.js', 'Fastify'].includes(f))) {
+    if (frameworks.some(f => ['Express.js', 'Fastify', 'NestJS'].includes(f))) {
       return 'Backend API Service';
     }
-    if (techStack.frameworks.includes('Next.js')) {
+    if (frameworks.includes('Next.js') || frameworks.includes('Nuxt.js')) {
       return 'Full-Stack Web Application';
     }
-    if (techStack.primaryLanguages.includes('Python')) {
-      return 'Python Application';
+    if (frameworks.includes('React Native') || frameworks.includes('Flutter')) {
+      return 'Mobile Application';
     }
-    if (techStack.primaryLanguages.includes('Java')) {
+    if (primaryLanguages.includes('Python')) {
+      return frameworks.some(f => f.includes('Django') || f.includes('Flask')) 
+        ? 'Python Web Application' 
+        : 'Python Application';
+    }
+    if (primaryLanguages.includes('Java')) {
       return 'Java Application';
     }
+    if (primaryLanguages.includes('Go')) {
+      return 'Go Application';
+    }
+    if (primaryLanguages.includes('Rust')) {
+      return 'Rust Application';
+    }
+    
     return 'Software Project';
   }
 }

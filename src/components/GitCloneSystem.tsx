@@ -90,15 +90,19 @@ export const GitCloneSystem: React.FC = () => {
   };
 
   const handleAnalyzeRepository = async (files: FileNode[]) => {
-    if (!files.length) return;
+    if (!files.length || !repository) return;
 
     setLoadingAnalysis(true);
     try {
-      const analysisResult = await llmAnalysisService.analyzeRepository(files, []);
+      const analysisResult = await llmAnalysisService.analyzeRepository(
+        repository.owner.login,
+        repository.name,
+        files
+      );
       setAnalysis(analysisResult);
     } catch (err) {
       console.error('Analysis failed:', err);
-      // Don't show error for analysis failure, just log it
+      setError(err instanceof Error ? `Analysis failed: ${err.message}` : 'Analysis failed');
     } finally {
       setLoadingAnalysis(false);
     }
