@@ -15,11 +15,16 @@ import {
   User,
   ExternalLink,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Brain,
+  Zap
 } from 'lucide-react';
 import { GitHubRepository, FileNode } from '../types/github';
+import { RepositoryAnalysis } from '../types/analysis';
 import { githubApi } from '../services/githubApi';
+import { llmAnalysisService } from '../services/llmAnalysis';
 import { getLanguageFromExtension, formatFileSize, formatDate } from '../utils/codeHighlighting';
+import { AnalysisPanel } from './AnalysisPanel';
 
 export const GitCloneSystem: React.FC = () => {
   const [repoUrl, setRepoUrl] = useState('');
@@ -29,9 +34,12 @@ export const GitCloneSystem: React.FC = () => {
   const [fileContent, setFileContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [analysis, setAnalysis] = useState<RepositoryAnalysis | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandingPaths, setExpandingPaths] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<'files' | 'analysis'>('files');
 
   const handleCloneRepository = async () => {
     if (!repoUrl.trim()) {
@@ -51,6 +59,7 @@ export const GitCloneSystem: React.FC = () => {
     setFileTree([]);
     setSelectedFile(null);
     setFileContent('');
+    setAnalysis(null);
 
     try {
       // Fetch repository information
@@ -70,10 +79,28 @@ export const GitCloneSystem: React.FC = () => {
       if (readmeFile) {
         await handleFileSelect(readmeFile, parsed.owner, parsed.repo);
       }
+
+      // Start AI analysis
+      handleAnalyzeRepository(tree);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch repository');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAnalyzeRepository = async (files: FileNode[]) => {
+    if (!files.length) return;
+
+    setLoadingAnalysis(true);
+    try {
+      const analysisResult = await llmAnalysisService.analyzeRepository(files, []);
+      setAnalysis(analysisResult);
+    } catch (err) {
+      console.error('Analysis failed:', err);
+      // Don't show error for analysis failure, just log it
+    } finally {
+      setLoadingAnalysis(false);
     }
   };
 
@@ -330,9 +357,51 @@ export const GitCloneSystem: React.FC = () => {
                   <RefreshCw className="w-4 h-4" />
                   <span className="text-sm">Refresh</span>
                 </button>
+                <button
+                  onClick={() => handleAnalyzeRepository(fileTree)}
+                  disabled={loadingAnalysis}
+                  className="flex items-center space-x-1 px-3 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loadingAnalysis ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Brain className="w-4 h-4" />
+                  )}
+                  <span className="text-sm">AI Analysis</span>
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Tab Navigation */}
+              <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 mb-6">
+                <button
+                  onClick={() => setActiveTab('files')}
+                  className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+                    activeTab === 'files' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <Folder className="w-4 h-4" />
+                  <span>File Explorer</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('analysis')}
+                  className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-md transition-colors ${
+                    activeTab === 'analysis' 
+                      ? 'bg-white text-purple-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <Brain className="w-4 h-4" />
+                  <span>AI Analysis</span>
+                  {analysis && (
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  )}
+                </button>
+              </div>
+
+              {activeTab === 'files' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
                     <Folder className="w-5 h-5" />
@@ -399,6 +468,9 @@ export const GitCloneSystem: React.FC = () => {
                   )}
                 </div>
               </div>
+              ) : (
+                <AnalysisPanel analysis={analysis} loading={loadingAnalysis} />
+              )}
             </div>
           </div>
         </div>
