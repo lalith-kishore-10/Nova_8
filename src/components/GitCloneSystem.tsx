@@ -1,225 +1,37 @@
 import React, { useState } from 'react';
-import { GitBranch, Folder, FolderOpen, File, Search, Download, Code, Star, GitFork, Eye, AlertCircle } from 'lucide-react';
-
-interface FileNode {
-  name: string;
-  type: 'file' | 'directory';
-  path: string;
-  size?: number;
-  content?: string;
-  children?: FileNode[];
-  expanded?: boolean;
-}
-
-interface Repository {
-  name: string;
-  description: string;
-  url: string;
-  stars: number;
-  forks: number;
-  watchers: number;
-  language: string;
-  files: FileNode[];
-}
-
-// Mock repository data for demonstration
-const mockRepository: Repository = {
-  name: "awesome-project",
-  description: "A beautiful React application with modern features",
-  url: "https://github.com/user/awesome-project",
-  stars: 1234,
-  forks: 567,
-  watchers: 89,
-  language: "TypeScript",
-  files: [
-    {
-      name: "src",
-      type: "directory",
-      path: "src",
-      expanded: true,
-      children: [
-        {
-          name: "components",
-          type: "directory",
-          path: "src/components",
-          children: [
-            {
-              name: "App.tsx",
-              type: "file",
-              path: "src/components/App.tsx",
-              size: 1234,
-              content: `import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Header from './Header';
-import Home from './Home';
-import About from './About';
-
-function App() {
-  return (
-    <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <main className="container mx-auto px-4 py-8">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<About />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
-  );
-}
-
-export default App;`
-            },
-            {
-              name: "Header.tsx",
-              type: "file",
-              path: "src/components/Header.tsx",
-              size: 892,
-              content: `import React from 'react';
-import { Link } from 'react-router-dom';
-
-const Header: React.FC = () => {
-  return (
-    <header className="bg-white shadow-sm">
-      <nav className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-gray-900">
-            Awesome Project
-          </Link>
-          <div className="flex space-x-6">
-            <Link to="/" className="text-gray-600 hover:text-gray-900">
-              Home
-            </Link>
-            <Link to="/about" className="text-gray-600 hover:text-gray-900">
-              About
-            </Link>
-          </div>
-        </div>
-      </nav>
-    </header>
-  );
-};
-
-export default Header;`
-            }
-          ]
-        },
-        {
-          name: "utils",
-          type: "directory",
-          path: "src/utils",
-          children: [
-            {
-              name: "helpers.ts",
-              type: "file",
-              path: "src/utils/helpers.ts",
-              size: 456,
-              content: `export const formatDate = (date: Date): string => {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  }).format(date);
-};
-
-export const debounce = <T extends (...args: any[]) => any>(
-  func: T,
-  delay: number
-): ((...args: Parameters<T>) => void) => {
-  let timeoutId: NodeJS.Timeout;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func(...args), delay);
-  };
-};`
-            }
-          ]
-        }
-      ]
-    },
-    {
-      name: "package.json",
-      type: "file",
-      path: "package.json",
-      size: 2145,
-      content: `{
-  "name": "awesome-project",
-  "version": "1.0.0",
-  "description": "A beautiful React application with modern features",
-  "main": "index.js",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.8.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.5",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.4.2"
-  }
-}`
-    },
-    {
-      name: "README.md",
-      type: "file",
-      path: "README.md",
-      size: 1678,
-      content: `# Awesome Project
-
-A beautiful React application with modern features and clean architecture.
-
-## Features
-
-- Modern React with TypeScript
-- Responsive design
-- Clean component architecture
-- Routing with React Router
-- Utility functions and helpers
-
-## Getting Started
-
-1. Clone the repository
-2. Install dependencies: \`npm install\`
-3. Start the development server: \`npm run dev\`
-
-## Project Structure
-
-\`\`\`
-src/
-├── components/
-│   ├── App.tsx
-│   └── Header.tsx
-└── utils/
-    └── helpers.ts
-\`\`\`
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first.
-
-## License
-
-MIT`
-    }
-  ]
-};
+import { 
+  GitBranch, 
+  Folder, 
+  FolderOpen, 
+  File, 
+  Search, 
+  Download, 
+  Code, 
+  Star, 
+  GitFork, 
+  Eye, 
+  AlertCircle,
+  Calendar,
+  User,
+  ExternalLink,
+  Loader2,
+  RefreshCw
+} from 'lucide-react';
+import { GitHubRepository, FileNode } from '../types/github';
+import { githubApi } from '../services/githubApi';
+import { getLanguageFromExtension, formatFileSize, formatDate } from '../utils/codeHighlighting';
 
 export const GitCloneSystem: React.FC = () => {
   const [repoUrl, setRepoUrl] = useState('');
-  const [repository, setRepository] = useState<Repository | null>(null);
+  const [repository, setRepository] = useState<GitHubRepository | null>(null);
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
+  const [fileContent, setFileContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [loadingFile, setLoadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandingPaths, setExpandingPaths] = useState<Set<string>>(new Set());
 
   const handleCloneRepository = async () => {
     if (!repoUrl.trim()) {
@@ -227,65 +39,147 @@ export const GitCloneSystem: React.FC = () => {
       return;
     }
 
+    const parsed = githubApi.parseRepositoryUrl(repoUrl);
+    if (!parsed) {
+      setError('Invalid GitHub repository URL. Please use format: https://github.com/owner/repo');
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setRepository(null);
+    setFileTree([]);
+    setSelectedFile(null);
+    setFileContent('');
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Fetch repository information
+      const repo = await githubApi.getRepository(parsed.owner, parsed.repo);
+      setRepository(repo);
+
+      // Build initial file tree
+      const tree = await githubApi.buildFileTree(parsed.owner, parsed.repo);
+      setFileTree(tree);
+
+      // Auto-select README if it exists
+      const readmeFile = tree.find(file => 
+        file.type === 'file' && 
+        file.name.toLowerCase().startsWith('readme')
+      );
       
-      // In a real implementation, this would call a backend service
-      // Since Git is not available in WebContainer, we'll show the limitation
-      setError('Git is not available in this WebContainer environment. This demo shows the interface with mock data.');
-      setRepository(mockRepository);
-      setSelectedFile(mockRepository.files[0].children?.[0].children?.[0] || null);
+      if (readmeFile) {
+        await handleFileSelect(readmeFile, parsed.owner, parsed.repo);
+      }
     } catch (err) {
-      setError('Failed to clone repository');
+      setError(err instanceof Error ? err.message : 'Failed to fetch repository');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleDirectory = (node: FileNode) => {
-    if (node.type === 'directory') {
-      node.expanded = !node.expanded;
-      setRepository(prev => prev ? { ...prev } : null);
+  const handleFileSelect = async (file: FileNode, owner?: string, repo?: string) => {
+    if (file.type === 'directory') return;
+
+    if (!repository) return;
+
+    const repoOwner = owner || repository.owner.login;
+    const repoName = repo || repository.name;
+
+    setLoadingFile(true);
+    setSelectedFile(file);
+
+    try {
+      const content = await githubApi.getFileContent(repoOwner, repoName, file.path);
+      setFileContent(content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch file content');
+      setFileContent('Error loading file content');
+    } finally {
+      setLoadingFile(false);
     }
   };
 
+  const toggleDirectory = async (node: FileNode) => {
+    if (node.type !== 'directory' || !repository) return;
+
+    const path = node.path;
+    
+    if (node.expanded) {
+      // Collapse directory
+      node.expanded = false;
+      node.children = [];
+    } else {
+      // Expand directory
+      if (expandingPaths.has(path)) return; // Already expanding
+      
+      setExpandingPaths(prev => new Set(prev).add(path));
+      
+      try {
+        const children = await githubApi.buildFileTree(
+          repository.owner.login, 
+          repository.name, 
+          path
+        );
+        node.children = children;
+        node.expanded = true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load directory contents');
+      } finally {
+        setExpandingPaths(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(path);
+          return newSet;
+        });
+      }
+    }
+
+    setFileTree([...fileTree]);
+  };
+
   const renderFileTree = (nodes: FileNode[], level = 0) => {
-    return nodes.map((node) => (
-      <div key={node.path} className={`ml-${level * 4}`}>
+    const filteredNodes = searchTerm 
+      ? nodes.filter(node => 
+          node.name.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      : nodes;
+
+    return filteredNodes.map((node) => (
+      <div key={node.path}>
         <div
-          className={`flex items-center space-x-2 px-3 py-1 rounded cursor-pointer hover:bg-gray-100 transition-colors ${
-            selectedFile?.path === node.path ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+          className={`flex items-center space-x-2 px-3 py-2 rounded cursor-pointer hover:bg-gray-100 transition-colors ${
+            selectedFile?.path === node.path ? 'bg-blue-50 text-blue-600 border-l-2 border-blue-500' : 'text-gray-700'
           }`}
+          style={{ paddingLeft: `${12 + level * 16}px` }}
           onClick={() => {
             if (node.type === 'directory') {
               toggleDirectory(node);
             } else {
-              setSelectedFile(node);
+              handleFileSelect(node);
             }
           }}
         >
           {node.type === 'directory' ? (
-            node.expanded ? (
-              <FolderOpen className="w-4 h-4 text-blue-500" />
-            ) : (
-              <Folder className="w-4 h-4 text-blue-500" />
-            )
+            <>
+              {expandingPaths.has(node.path) ? (
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+              ) : node.expanded ? (
+                <FolderOpen className="w-4 h-4 text-blue-500" />
+              ) : (
+                <Folder className="w-4 h-4 text-blue-500" />
+              )}
+            </>
           ) : (
             <File className="w-4 h-4 text-gray-500" />
           )}
-          <span className="text-sm font-medium">{node.name}</span>
-          {node.type === 'file' && node.size && (
-            <span className="text-xs text-gray-500 ml-auto">
-              {(node.size / 1024).toFixed(1)} KB
+          <span className="text-sm font-medium flex-1">{node.name}</span>
+          {node.type === 'file' && node.size !== undefined && (
+            <span className="text-xs text-gray-500">
+              {formatFileSize(node.size)}
             </span>
           )}
         </div>
         {node.type === 'directory' && node.expanded && node.children && (
-          <div className="ml-4">
+          <div>
             {renderFileTree(node.children, level + 1)}
           </div>
         )}
@@ -293,26 +187,18 @@ export const GitCloneSystem: React.FC = () => {
     ));
   };
 
-  const getLanguageFromExtension = (filename: string): string => {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    const languageMap: { [key: string]: string } = {
-      'js': 'javascript',
-      'jsx': 'javascript',
-      'ts': 'typescript',
-      'tsx': 'typescript',
-      'py': 'python',
-      'java': 'java',
-      'cpp': 'cpp',
-      'c': 'c',
-      'css': 'css',
-      'html': 'html',
-      'json': 'json',
-      'md': 'markdown',
-      'xml': 'xml',
-      'yaml': 'yaml',
-      'yml': 'yaml'
-    };
-    return languageMap[ext || ''] || 'text';
+  const downloadFile = () => {
+    if (!selectedFile || !fileContent) return;
+    
+    const blob = new Blob([fileContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = selectedFile.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -321,32 +207,45 @@ export const GitCloneSystem: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex items-center space-x-4 mb-6">
             <GitBranch className="w-8 h-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900">Git Repository Cloner</h1>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">GitHub Repository Explorer</h1>
+              <p className="text-gray-600 mt-1">Clone and explore any public GitHub repository</p>
+            </div>
           </div>
           
           <div className="flex space-x-4">
             <div className="flex-1">
               <input
-                type="url"
-                placeholder="Enter Git repository URL (e.g., https://github.com/user/repo)"
+                type="text"
+                placeholder="Enter GitHub repository URL (e.g., https://github.com/facebook/react)"
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 onKeyPress={(e) => e.key === 'Enter' && handleCloneRepository()}
               />
             </div>
             <button
               onClick={handleCloneRepository}
               disabled={loading}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
             >
-              {loading ? 'Cloning...' : 'Clone Repository'}
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Explore Repository</span>
+                </>
+              )}
             </button>
           </div>
 
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5 text-red-600" />
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
               <span className="text-red-700">{error}</span>
             </div>
           )}
@@ -357,28 +256,57 @@ export const GitCloneSystem: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="bg-white rounded-lg shadow-sm border mb-6">
             <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{repository.name}</h2>
-                  <p className="text-gray-600 mt-1">{repository.description}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <img 
+                      src={repository.owner.avatar_url} 
+                      alt={repository.owner.login}
+                      className="w-8 h-8 rounded-full"
+                    />
+                    <h2 className="text-2xl font-bold text-gray-900">{repository.full_name}</h2>
+                    <a 
+                      href={repository.html_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                  {repository.description && (
+                    <p className="text-gray-600 mb-3">{repository.description}</p>
+                  )}
+                  <div className="flex items-center space-x-4 text-sm text-gray-500">
+                    <div className="flex items-center space-x-1">
+                      <Calendar className="w-4 h-4" />
+                      <span>Updated {formatDate(repository.updated_at)}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <User className="w-4 h-4" />
+                      <span>{repository.owner.login}</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-6 text-sm text-gray-600">
                   <div className="flex items-center space-x-1">
-                    <Star className="w-4 h-4" />
-                    <span>{repository.stars}</span>
+                    <Star className="w-4 h-4 text-yellow-500" />
+                    <span className="font-medium">{repository.stargazers_count.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <GitFork className="w-4 h-4" />
-                    <span>{repository.forks}</span>
+                    <span className="font-medium">{repository.forks_count.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <Eye className="w-4 h-4" />
-                    <span>{repository.watchers}</span>
+                    <span className="font-medium">{repository.watchers_count.toLocaleString()}</span>
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Code className="w-4 h-4" />
-                    <span>{repository.language}</span>
-                  </div>
+                  {repository.language && (
+                    <div className="flex items-center space-x-1">
+                      <Code className="w-4 h-4" />
+                      <span className="font-medium">{repository.language}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -392,16 +320,33 @@ export const GitCloneSystem: React.FC = () => {
                     placeholder="Search files..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   />
                 </div>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="flex items-center space-x-1 px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span className="text-sm">Refresh</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">File Tree</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                    {renderFileTree(repository.files)}
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                    <Folder className="w-5 h-5" />
+                    <span>File Explorer</span>
+                  </h3>
+                  <div className="bg-gray-50 rounded-lg border max-h-96 overflow-y-auto">
+                    {fileTree.length > 0 ? (
+                      renderFileTree(fileTree)
+                    ) : (
+                      <div className="p-4 text-center text-gray-500">
+                        <Folder className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                        <p>No files found</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -409,29 +354,47 @@ export const GitCloneSystem: React.FC = () => {
                   {selectedFile ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {selectedFile.name}
-                        </h3>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm text-gray-500">
-                            {getLanguageFromExtension(selectedFile.name)}
-                          </span>
-                          <button className="flex items-center space-x-1 px-3 py-1 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
-                            <Download className="w-4 h-4" />
-                            <span className="text-sm">Download</span>
-                          </button>
+                        <div className="flex items-center space-x-3">
+                          <File className="w-5 h-5 text-gray-500" />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {selectedFile.name}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {selectedFile.path} • {getLanguageFromExtension(selectedFile.name)}
+                              {selectedFile.size && ` • ${formatFileSize(selectedFile.size)}`}
+                            </p>
+                          </div>
                         </div>
+                        <button 
+                          onClick={downloadFile}
+                          className="flex items-center space-x-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download</span>
+                        </button>
                       </div>
-                      <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-                        <pre className="text-sm text-gray-100">
-                          <code>{selectedFile.content}</code>
-                        </pre>
+                      
+                      <div className="bg-gray-900 rounded-lg border overflow-hidden">
+                        {loadingFile ? (
+                          <div className="p-8 text-center">
+                            <Loader2 className="w-8 h-8 text-blue-400 mx-auto mb-4 animate-spin" />
+                            <p className="text-gray-400">Loading file content...</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <pre className="p-4 text-sm text-gray-100 whitespace-pre-wrap">
+                              <code>{fileContent}</code>
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-gray-50 rounded-lg p-8 text-center">
+                    <div className="bg-gray-50 rounded-lg border p-8 text-center">
                       <File className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600">Select a file to view its contents</p>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Select a file to view</h3>
+                      <p className="text-gray-600">Choose a file from the explorer to view its contents</p>
                     </div>
                   )}
                 </div>
