@@ -17,7 +17,7 @@ export class HuggingFaceProvider implements LLMProvider {
   constructor(private config: LLMConfig) {}
 
   async generateResponse(prompt: string): Promise<LLMResponse> {
-    const modelUrl = `${this.config.baseUrl}/${this.config.model}`;
+    const modelUrl = `${this.config.baseUrl}/models/${this.config.model}`;
     
     // Format prompt for DeepSeek Coder
     const formattedPrompt = `### Instruction:
