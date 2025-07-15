@@ -27,7 +27,7 @@ export const getLLMConfig = (): LLMConfig => {
     },
     huggingface: {
       apiKey: import.meta.env.VITE_HUGGINGFACE_API_KEY || '',
-      model: import.meta.env.VITE_LLM_MODEL || 'deepseek-ai/deepseek-coder-33b-instruct',
+      model: import.meta.env.VITE_LLM_MODEL || 'ddeepseek-ai/deepseek-coder-6.7b-instruct',
       baseUrl: 'https://api-inference.huggingface.co/models',
       maxTokens: 4000,
       temperature: 0.1
