@@ -15,11 +15,15 @@ import {
   User,
   ExternalLink,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Brain,
+  BarChart3
 } from 'lucide-react';
 import { GitHubRepository, FileNode } from '../types/github';
 import { githubApi } from '../services/githubApi';
 import { getLanguageFromExtension, formatFileSize, formatDate } from '../utils/codeHighlighting';
+import { llmAnalysisService, RepositoryAnalysis } from '../services/llmAnalysis';
+import { AnalysisPanel } from './AnalysisPanel';
 
 export const GitCloneSystem: React.FC = () => {
   const [repoUrl, setRepoUrl] = useState('');
@@ -32,6 +36,9 @@ export const GitCloneSystem: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandingPaths, setExpandingPaths] = useState<Set<string>>(new Set());
+  const [analysis, setAnalysis] = useState<RepositoryAnalysis | null>(null);
+  const [analyzingRepo, setAnalyzingRepo] = useState(false);
+  const [activeTab, setActiveTab] = useState<'files' | 'analysis'>('files');
 
   const handleCloneRepository = async () => {
     if (!repoUrl.trim()) {
@@ -51,6 +58,8 @@ export const GitCloneSystem: React.FC = () => {
     setFileTree([]);
     setSelectedFile(null);
     setFileContent('');
+    setAnalysis(null);
+    setActiveTab('files');
 
     try {
       // Fetch repository information
@@ -75,6 +84,92 @@ export const GitCloneSystem: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAnalyzeRepository = async () => {
+    if (!repository || !fileTree.length) return;
+
+    setAnalyzingRepo(true);
+    setError(null);
+
+    try {
+      // Collect file information for analysis
+      const filesToAnalyze: { name: string; content?: string; path: string }[] = [];
+      
+      // Add important files from root level
+      const importantFiles = fileTree.filter(file => 
+        file.type === 'file' && (
+          file.name.toLowerCase().includes('package.json') ||
+          file.name.toLowerCase().includes('requirements.txt') ||
+          file.name.toLowerCase().includes('gemfile') ||
+          file.name.toLowerCase().includes('composer.json') ||
+          file.name.toLowerCase().includes('pom.xml') ||
+          file.name.toLowerCase().includes('build.gradle') ||
+          file.name.toLowerCase().includes('cargo.toml') ||
+          file.name.toLowerCase().includes('go.mod') ||
+          file.name.toLowerCase().includes('readme') ||
+          file.name.toLowerCase().includes('dockerfile') ||
+          file.name.toLowerCase().includes('makefile')
+        )
+      );
+
+      // Get content for important files
+      for (const file of importantFiles.slice(0, 10)) {
+        try {
+          const content = await githubApi.getFileContent(
+            repository.owner.login,
+            repository.name,
+            file.path
+          );
+          filesToAnalyze.push({
+            name: file.name,
+            content,
+            path: file.path
+          });
+        } catch (err) {
+          // Skip files that can't be loaded
+          filesToAnalyze.push({
+            name: file.name,
+            path: file.path
+          });
+        }
+      }
+
+      // Add all files for structure analysis
+      const allFiles = getAllFiles(fileTree);
+      allFiles.forEach(file => {
+        if (!filesToAnalyze.find(f => f.path === file.path)) {
+          filesToAnalyze.push({
+            name: file.name,
+            path: file.path
+          });
+        }
+      });
+
+      const repositoryAnalysis = await llmAnalysisService.analyzeRepository(filesToAnalyze);
+      setAnalysis(repositoryAnalysis);
+      setActiveTab('analysis');
+    } catch (err) {
+      setError(`Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setAnalyzingRepo(false);
+    }
+  };
+
+  const getAllFiles = (nodes: FileNode[]): FileNode[] => {
+    const files: FileNode[] = [];
+    
+    const traverse = (nodeList: FileNode[]) => {
+      nodeList.forEach(node => {
+        files.push(node);
+        if (node.children) {
+          traverse(node.children);
+        }
+      });
+    };
+    
+    traverse(nodes);
+    return files;
   };
 
   const handleFileSelect = async (file: FileNode, owner?: string, repo?: string) => {
@@ -331,6 +426,25 @@ export const GitCloneSystem: React.FC = () => {
                   <span className="text-sm">Refresh</span>
                 </button>
               </div>
+              
+              {/* Analysis Button */}
+              <button
+                onClick={handleAnalyzeRepository}
+                disabled={analyzingRepo || !fileTree.length}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                {analyzingRepo ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Analyzing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Brain className="w-4 h-4" />
+                    <span>Analyze Tech Stack</span>
+                  </>
+                )}
+              </button>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1">
@@ -361,11 +475,42 @@ export const GitCloneSystem: React.FC = () => {
                               {selectedFile.name}
                             </h3>
                             <p className="text-sm text-gray-500">
+            {/* Tab Content */}
+            {activeTab === 'files' ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                    <Folder className="w-5 h-5" />
+                    <span>File Explorer</span>
+                  </h3>
+                  <div className="bg-gray-50 rounded-lg border max-h-96 overflow-y-auto">
+                    {fileTree.length > 0 ? (
+                      renderFileTree(fileTree)
+                    ) : (
+                      <div className="p-4 text-center text-gray-500">
+                        <Folder className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                        <p>No files found</p>
+                      </div>
+                    )}
+                  </div>
+                        {loadingFile ? (
+                            <Loader2 className="w-8 h-8 text-blue-400 mx-auto mb-4 animate-spin" />
+                <div className="lg:col-span-2">
+                  {selectedFile ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <File className="w-5 h-5 text-gray-500" />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {selectedFile.name}
+                            </h3>
+                            <p className="text-sm text-gray-500">
                               {selectedFile.path} • {getLanguageFromExtension(selectedFile.name)}
                               {selectedFile.size && ` • ${formatFileSize(selectedFile.size)}`}
                             </p>
                           </div>
-                        </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Select a file to view</h3>
                         <button 
                           onClick={downloadFile}
                           className="flex items-center space-x-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm"
@@ -373,8 +518,8 @@ export const GitCloneSystem: React.FC = () => {
                           <Download className="w-4 h-4" />
                           <span>Download</span>
                         </button>
-                      </div>
-                      
+                      <p className="text-gray-600">Choose a file from the explorer to view its contents</p>
+              <button
                       <div className="bg-gray-900 rounded-lg border overflow-hidden">
                         {loadingFile ? (
                           <div className="p-8 text-center">
@@ -389,7 +534,7 @@ export const GitCloneSystem: React.FC = () => {
                           </div>
                         )}
                       </div>
-                    </div>
+                className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
                   ) : (
                     <div className="bg-gray-50 rounded-lg border p-8 text-center">
                       <File className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -398,9 +543,38 @@ export const GitCloneSystem: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </button>
+            ) : (
+              <div>
+                {analysis ? (
+                  <AnalysisPanel analysis={analysis} />
+                ) : (
+                  <div className="bg-gray-50 rounded-lg border p-8 text-center">
+                    <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Analysis Available</h3>
+                    <p className="text-gray-600 mb-4">Click "Analyze Tech Stack" to get AI-powered insights about this repository</p>
+                    <button
+                      onClick={handleAnalyzeRepository}
+                      disabled={analyzingRepo || !fileTree.length}
+                      className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium mx-auto"
+                    >
+                      {analyzingRepo ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Analyzing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="w-4 h-4" />
+                          <span>Analyze Tech Stack</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
+            )}
+
         </div>
       )}
     </div>
