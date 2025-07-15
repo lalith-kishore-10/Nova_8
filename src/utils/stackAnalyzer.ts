@@ -31,7 +31,11 @@ export class StackAnalyzer {
   private async analyzeLLMEnhanced(): Promise<StackAnalysis | null> {
     try {
       // Check if Ollama is available
-      const statusResponse = await fetch('http://localhost:5001/ollama-status');
+      const statusResponse = await fetch('http://localhost:5001/ollama-status', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
       if (!statusResponse.ok) {
         throw new Error('Ollama not available');
       }
@@ -49,6 +53,7 @@ export class StackAnalyzer {
       const response = await fetch('http://localhost:5001/analyze-stack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(30000), // 30 second timeout for analysis
         body: JSON.stringify(analysisData)
       });
 
@@ -79,8 +84,14 @@ export class StackAnalyzer {
         recommendations: llmResult.recommendations || [],
         dockerStrategy: llmResult.dockerStrategy
       };
-    } catch (error) {
-      console.error('LLM-enhanced analysis failed:', error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn('LLM analysis timed out, falling back to traditional analysis');
+      } else if (error.message?.includes('Failed to fetch')) {
+        console.warn('Backend server not accessible at http://localhost:5001. Please run "npm run dev:full" to start both frontend and backend servers.');
+      } else {
+        console.warn('LLM-enhanced analysis failed, falling back to traditional analysis:', error.message);
+      }
       return null;
     }
   }
