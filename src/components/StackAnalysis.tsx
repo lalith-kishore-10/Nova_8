@@ -46,6 +46,16 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
 
   // Debug log to check analysis data
   console.log('StackAnalysis component received:', analysis);
+  
+  // Add safety checks
+  if (!analysis) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        <p>No analysis data available</p>
+      </div>
+    );
+  }
+  
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6">
@@ -70,10 +80,10 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
               <p className="font-semibold text-gray-900">{packageManager}</p>
             </div>
           )}
-          {runtime && (
+          {analysis.runtime && (
             <div>
               <span className="text-gray-600">Runtime:</span>
-              <p className="font-semibold text-gray-900">{runtime}</p>
+              <p className="font-semibold text-gray-900">{analysis.runtime}</p>
             </div>
           )}
           <div>

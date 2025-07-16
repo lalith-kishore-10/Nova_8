@@ -29,34 +29,53 @@ export class StackAnalyzer {
       styling: []
     };
 
+    console.log('Starting stack analysis with files:', this.files.length);
+    console.log('File contents loaded:', this.fileContents.size);
+    console.log('Detected primary language:', analysis.primaryLanguage);
+
     // Analyze package.json for Node.js projects
     const packageJson = this.fileContents.get('package.json');
     if (packageJson) {
+      console.log('Found package.json, analyzing...');
       this.analyzePackageJson(packageJson, analysis);
+    } else {
+      console.log('No package.json found');
     }
 
     // Analyze requirements.txt for Python projects
     const requirementsTxt = this.fileContents.get('requirements.txt');
     if (requirementsTxt) {
+      console.log('Found requirements.txt, analyzing...');
       this.analyzeRequirementsTxt(requirementsTxt, analysis);
+    } else {
+      console.log('No requirements.txt found');
     }
 
     // Analyze pom.xml for Java projects
     const pomXml = this.fileContents.get('pom.xml');
     if (pomXml) {
+      console.log('Found pom.xml, analyzing...');
       this.analyzePomXml(pomXml, analysis);
+    } else {
+      console.log('No pom.xml found');
     }
 
     // Analyze Cargo.toml for Rust projects
     const cargoToml = this.fileContents.get('Cargo.toml');
     if (cargoToml) {
+      console.log('Found Cargo.toml, analyzing...');
       this.analyzeCargoToml(cargoToml, analysis);
+    } else {
+      console.log('No Cargo.toml found');
     }
 
     // Analyze go.mod for Go projects
     const goMod = this.fileContents.get('go.mod');
     if (goMod) {
+      console.log('Found go.mod, analyzing...');
       this.analyzeGoMod(goMod, analysis);
+    } else {
+      console.log('No go.mod found');
     }
 
     // Detect framework and additional tools
@@ -65,8 +84,15 @@ export class StackAnalyzer {
     this.detectDatabase(analysis);
     this.detectPackageManager(analysis);
 
-    // Log analysis results for debugging
-    console.log('Stack Analysis Results:', analysis);
+    console.log('Final analysis results:', {
+      primaryLanguage: analysis.primaryLanguage,
+      framework: analysis.framework,
+      runtime: analysis.runtime,
+      packageManager: analysis.packageManager,
+      dependenciesCount: analysis.dependencies.length,
+      devDependenciesCount: analysis.devDependencies.length,
+      scriptsCount: Object.keys(analysis.scripts).length
+    });
     
     return analysis;
   }
@@ -105,6 +131,12 @@ export class StackAnalyzer {
   private analyzePackageJson(content: string, analysis: StackAnalysis) {
     try {
       const pkg = JSON.parse(content);
+      console.log('Parsing package.json:', { 
+        name: pkg.name, 
+        dependencies: Object.keys(pkg.dependencies || {}),
+        devDependencies: Object.keys(pkg.devDependencies || {})
+      });
+      
       analysis.packageManager = 'npm';
       analysis.scripts = pkg.scripts || {};
 
@@ -117,6 +149,7 @@ export class StackAnalyzer {
             category: this.categorizeDependency(name)
           });
         });
+        console.log(`Added ${Object.keys(pkg.dependencies).length} runtime dependencies`);
       }
 
       if (pkg.devDependencies) {
@@ -128,6 +161,7 @@ export class StackAnalyzer {
             category: this.categorizeDependency(name)
           });
         });
+        console.log(`Added ${Object.keys(pkg.devDependencies).length} dev dependencies`);
       }
     } catch (error) {
       console.error('Error parsing package.json:', error);
@@ -228,9 +262,13 @@ export class StackAnalyzer {
     const deps = [...analysis.dependencies, ...analysis.devDependencies];
     const hasFile = (name: string) => this.files.some(f => f.path === name || f.path.endsWith(`/${name}`));
     
+    console.log('Detecting framework from dependencies:', deps.map(d => d.name));
+    console.log('Checking for framework files...');
+    
     // React
     if (deps.some(d => d.name === 'react')) {
       analysis.framework = 'React';
+      console.log('Detected React framework');
       if (deps.some(d => d.name === 'next')) analysis.framework = 'Next.js';
       if (deps.some(d => d.name === 'gatsby')) analysis.framework = 'Gatsby';
       if (hasFile('next.config.js') || hasFile('next.config.ts')) analysis.framework = 'Next.js';
@@ -239,6 +277,7 @@ export class StackAnalyzer {
     // Vue
     if (deps.some(d => d.name === 'vue')) {
       analysis.framework = 'Vue.js';
+      console.log('Detected Vue.js framework');
       if (deps.some(d => d.name === 'nuxt')) analysis.framework = 'Nuxt.js';
       if (hasFile('nuxt.config.js') || hasFile('nuxt.config.ts')) analysis.framework = 'Nuxt.js';
     }
@@ -246,10 +285,12 @@ export class StackAnalyzer {
     // Angular
     if (deps.some(d => d.name.startsWith('@angular/'))) {
       analysis.framework = 'Angular';
+      console.log('Detected Angular framework');
     }
     
     // Check for framework files if no dependencies detected
     if (!analysis.framework) {
+      console.log('No framework detected from dependencies, checking config files...');
       if (hasFile('angular.json')) analysis.framework = 'Angular';
       if (hasFile('vue.config.js')) analysis.framework = 'Vue.js';
       if (hasFile('svelte.config.js')) analysis.framework = 'Svelte';
@@ -268,6 +309,8 @@ export class StackAnalyzer {
     // Java frameworks
     if (deps.some(d => d.name.includes('spring'))) analysis.framework = 'Spring Boot';
     
+    console.log('Final detected framework:', analysis.framework);
+    
     // Set runtime based on language and framework
     if (analysis.primaryLanguage === 'javascript' || analysis.primaryLanguage === 'typescript') {
       analysis.runtime = 'Node.js';
@@ -275,7 +318,17 @@ export class StackAnalyzer {
       analysis.runtime = 'Python';
     } else if (analysis.primaryLanguage === 'java') {
       analysis.runtime = 'JVM';
+    } else if (analysis.primaryLanguage === 'go') {
+      analysis.runtime = 'Go';
+    } else if (analysis.primaryLanguage === 'rust') {
+      analysis.runtime = 'Rust';
+    } else if (analysis.primaryLanguage === 'php') {
+      analysis.runtime = 'PHP';
+    } else if (analysis.primaryLanguage === 'ruby') {
+      analysis.runtime = 'Ruby';
     }
+    
+    console.log('Set runtime:', analysis.runtime);
   }
 
   private detectPackageManager(analysis: StackAnalysis) {

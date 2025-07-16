@@ -73,21 +73,42 @@ function App() {
        file.path.endsWith('.tsx') ||
        file.path.endsWith('.py') ||
        file.path.endsWith('.json') ||
+       file.path.endsWith('.java') ||
+       file.path.endsWith('.go') ||
+       file.path.endsWith('.rs') ||
+       file.path.endsWith('.php') ||
+       file.path.endsWith('.rb') ||
        file.path === 'package.json' ||
        file.path === 'requirements.txt' ||
+       file.path === 'pom.xml' ||
+       file.path === 'Cargo.toml' ||
+       file.path === 'go.mod' ||
+       file.path === 'composer.json' ||
+       file.path === 'Gemfile' ||
        file.path === 'README.md' ||
-       file.path === '.gitignore')
-    ).slice(0, 20); // Limit to prevent too many API calls
+       file.path === '.gitignore' ||
+       file.path.includes('config') ||
+       file.size && file.size < 100000) // Include small files under 100KB
+    ).slice(0, 50); // Increased limit for better analysis
 
     const loadedFiles = new Map<string, string>();
     
     for (const file of filesToLoad) {
       try {
         const fileData = await fetchFileContent(owner, repoName, file.path);
-        const content = fileData.content ? atob(fileData.content) : '';
+        let content = '';
+        if (fileData.content) {
+          try {
+            content = atob(fileData.content);
+          } catch (decodeError) {
+            console.warn(`Failed to decode ${file.path}:`, decodeError);
+            content = fileData.content; // Use raw content if base64 decode fails
+          }
+        }
         loadedFiles.set(file.path, content);
+        logger.debug('system', `Loaded file: ${file.path} (${content.length} chars)`);
       } catch (error) {
-        console.warn(`Failed to load ${file.path}:`, error);
+        logger.warning('system', `Failed to load ${file.path}`, error instanceof Error ? error.message : 'Unknown error');
       }
     }
     
@@ -137,25 +158,41 @@ function App() {
       // Fetch key configuration files
       const keyFiles = [
         'package.json', 'requirements.txt', 'pom.xml', 'Cargo.toml', 'go.mod',
-        'composer.json', 'Gemfile', 'setup.py', 'pyproject.toml'
+        'composer.json', 'Gemfile', 'setup.py', 'pyproject.toml', 'yarn.lock',
+        'package-lock.json', 'pnpm-lock.yaml', 'Pipfile', 'poetry.lock',
+        'next.config.js', 'next.config.ts', 'vue.config.js', 'angular.json',
+        'webpack.config.js', 'vite.config.js', 'vite.config.ts', 'rollup.config.js',
+        'tailwind.config.js', 'tailwind.config.ts', '.eslintrc.js', '.eslintrc.json',
+        'tsconfig.json', 'jsconfig.json', 'babel.config.js', '.babelrc'
       ];
 
       const owner = repo.full_name.split('/')[0];
       const repoName = repo.full_name.split('/')[1];
       
       logger.info('analysis', `Fetching configuration files for analysis`);
+      logger.addProcessOutput(processId, 'stdout', `Analyzing ${files.length} files in repository...`);
 
       for (const fileName of keyFiles) {
         const file = files.find(f => f.path === fileName);
         if (file) {
           try {
             const fileData = await fetchFileContent(owner, repoName, file.path);
-            const content = fileData.content ? atob(fileData.content) : '';
+            let content = '';
+            if (fileData.content) {
+              try {
+                content = atob(fileData.content);
+              } catch (decodeError) {
+                logger.warning('analysis', `Failed to decode ${fileName}`, decodeError instanceof Error ? decodeError.message : 'Unknown error');
+                content = fileData.content;
+              }
+            }
             analyzer.addFileContent(file.path, content);
             logger.debug('analysis', `Loaded configuration file: ${fileName}`);
+            logger.addProcessOutput(processId, 'stdout', `✓ Loaded ${fileName}`);
           } catch (err) {
             // Continue if file fetch fails
             logger.warning('analysis', `Could not fetch ${fileName}`, err instanceof Error ? err.message : 'Unknown error');
+            logger.addProcessOutput(processId, 'stderr', `✗ Failed to load ${fileName}: ${err instanceof Error ? err.message : 'Unknown error'}`);
           }
         }
       }
@@ -164,30 +201,67 @@ function App() {
 
       const analysis = await analyzer.analyzeStack();
       
+      // Log analysis results for debugging
+      logger.debug('analysis', 'Analysis results', JSON.stringify(analysis, null, 2));
+      logger.addProcessOutput(processId, 'stdout', `Primary language: ${analysis.primaryLanguage}`);
+      logger.addProcessOutput(processId, 'stdout', `Framework: ${analysis.framework || 'None detected'}`);
+      logger.addProcessOutput(processId, 'stdout', `Dependencies: ${analysis.dependencies.length} runtime, ${analysis.devDependencies.length} dev`);
+      
       // Ensure we have valid analysis data
       if (!analysis.primaryLanguage || analysis.primaryLanguage === 'unknown') {
+        logger.addProcessOutput(processId, 'stdout', 'Primary language not detected from config files, analyzing file extensions...');
+        
         // Try to detect from file extensions if no package files found
         const jsFiles = files.filter(f => f.path.endsWith('.js') || f.path.endsWith('.jsx')).length;
         const tsFiles = files.filter(f => f.path.endsWith('.ts') || f.path.endsWith('.tsx')).length;
         const pyFiles = files.filter(f => f.path.endsWith('.py')).length;
         const javaFiles = files.filter(f => f.path.endsWith('.java')).length;
+        const goFiles = files.filter(f => f.path.endsWith('.go')).length;
+        const rustFiles = files.filter(f => f.path.endsWith('.rs')).length;
+        const phpFiles = files.filter(f => f.path.endsWith('.php')).length;
+        const rubyFiles = files.filter(f => f.path.endsWith('.rb')).length;
         
         if (tsFiles > 0) {
           analysis.primaryLanguage = 'typescript';
+          analysis.runtime = 'Node.js';
         } else if (jsFiles > 0) {
           analysis.primaryLanguage = 'javascript';
+          analysis.runtime = 'Node.js';
         } else if (pyFiles > 0) {
           analysis.primaryLanguage = 'python';
+          analysis.runtime = 'Python';
         } else if (javaFiles > 0) {
           analysis.primaryLanguage = 'java';
+          analysis.runtime = 'JVM';
+        } else if (goFiles > 0) {
+          analysis.primaryLanguage = 'go';
+          analysis.runtime = 'Go';
+        } else if (rustFiles > 0) {
+          analysis.primaryLanguage = 'rust';
+          analysis.runtime = 'Rust';
+        } else if (phpFiles > 0) {
+          analysis.primaryLanguage = 'php';
+          analysis.runtime = 'PHP';
+        } else if (rubyFiles > 0) {
+          analysis.primaryLanguage = 'ruby';
+          analysis.runtime = 'Ruby';
         }
         
         logger.info('analysis', `Detected primary language from file extensions: ${analysis.primaryLanguage}`);
+        logger.addProcessOutput(processId, 'stdout', `✓ Detected from file extensions: ${analysis.primaryLanguage}`);
+      }
+      
+      // Ensure we have some basic data even if detection fails
+      if (!analysis.primaryLanguage || analysis.primaryLanguage === 'unknown') {
+        analysis.primaryLanguage = 'unknown';
+        logger.warning('analysis', 'Could not detect primary language');
+        logger.addProcessOutput(processId, 'stderr', '⚠ Could not detect primary language');
       }
       
       setStackAnalysis(analysis);
       logger.success('analysis', `Stack analysis complete`, 
         `Detected: ${analysis.primaryLanguage}${analysis.framework ? ` with ${analysis.framework}` : ''}`);
+      logger.addProcessOutput(processId, 'stdout', `✓ Stack analysis complete: ${analysis.primaryLanguage}${analysis.framework ? ` with ${analysis.framework}` : ''}`);
 
       // Generate Docker files
       logger.addProcessOutput(processId, 'stdout', 'Generating Docker configuration...');
@@ -195,6 +269,7 @@ function App() {
       const generatedFiles = dockerGenerator.generateFiles();
       setDockerFiles(generatedFiles);
       logger.success('docker', 'Docker configuration generated successfully');
+      logger.addProcessOutput(processId, 'stdout', '✓ Docker configuration generated');
 
       // Run validation
       logger.addProcessOutput(processId, 'stdout', 'Running repository validation...');
@@ -206,12 +281,19 @@ function App() {
         if (file) {
           try {
             const fileData = await fetchFileContent(owner, repoName, file.path);
-            const content = fileData.content ? atob(fileData.content) : '';
+            let content = '';
+            if (fileData.content) {
+              try {
+                content = atob(fileData.content);
+              } catch (decodeError) {
+                logger.warning('validation', `Failed to decode ${fileName}`, decodeError instanceof Error ? decodeError.message : 'Unknown error');
+                content = fileData.content;
+              }
+            }
             validator.addFileContent(file.path, content);
             logger.debug('validation', `Loaded file for validation: ${fileName}`);
           } catch (err) {
             logger.warning('validation', `Could not fetch ${fileName} for validation`, err instanceof Error ? err.message : 'Unknown error');
-            console.warn(`Failed to fetch ${fileName} for validation:`, err);
           }
         }
       }
@@ -219,10 +301,12 @@ function App() {
       const validation = await validator.validateRepository();
       setValidationResult(validation);
       logger.success('validation', `Validation complete - Score: ${validation.score}/100`);
+      logger.addProcessOutput(processId, 'stdout', `✓ Validation complete - Score: ${validation.score}/100`);
 
       const tests = await validator.runTests();
       setTestResults(tests);
       logger.info('validation', `Test results: ${tests.length} test suites executed`);
+      logger.addProcessOutput(processId, 'stdout', `✓ Test results: ${tests.length} test suites executed`);
       
       logger.completeProcess(processId, 0);
       logger.addProcessOutput(processId, 'stdout', 'Analysis complete! Check the tabs for results.');
@@ -232,6 +316,7 @@ function App() {
     } catch (err) {
       logger.completeProcess(processId, 1);
       logger.error('analysis', 'Analysis failed', err instanceof Error ? err.message : 'Unknown error');
+      logger.addProcessOutput(processId, 'stderr', `✗ Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setError(err instanceof Error ? err.message : 'Failed to analyze stack');
       setState('repository');
     }
