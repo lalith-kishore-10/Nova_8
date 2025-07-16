@@ -78,6 +78,14 @@ function App() {
        file.path.endsWith('.rs') ||
        file.path.endsWith('.php') ||
        file.path.endsWith('.rb') ||
+        file.path.endsWith('.md') ||
+        file.path.endsWith('.txt') ||
+        file.path.endsWith('.yml') ||
+        file.path.endsWith('.yaml') ||
+        file.path.endsWith('.toml') ||
+        file.path.endsWith('.ini') ||
+        file.path.endsWith('.conf') ||
+        file.path.endsWith('.config') ||
        file.path === 'package.json' ||
        file.path === 'requirements.txt' ||
        file.path === 'pom.xml' ||
@@ -87,9 +95,12 @@ function App() {
        file.path === 'Gemfile' ||
        file.path === 'README.md' ||
        file.path === '.gitignore' ||
+        file.path === 'LICENSE' ||
+        file.path === 'CHANGELOG.md' ||
+        file.path.startsWith('.env') ||
        file.path.includes('config') ||
        file.size && file.size < 100000) // Include small files under 100KB
-    ).slice(0, 50); // Increased limit for better analysis
+    ).slice(0, 100); // Increased limit for better file coverage
 
     const loadedFiles = new Map<string, string>();
     
@@ -99,21 +110,32 @@ function App() {
         let content = '';
         if (fileData.content) {
           try {
-            content = atob(fileData.content);
+            // Handle base64 decoding more robustly
+            content = decodeURIComponent(escape(atob(fileData.content)));
           } catch (decodeError) {
-            console.warn(`Failed to decode ${file.path}:`, decodeError);
-            content = fileData.content; // Use raw content if base64 decode fails
+            try {
+              // Fallback to simple atob
+              content = atob(fileData.content);
+            } catch (fallbackError) {
+              logger.warning('system', `Failed to decode ${file.path}`, fallbackError instanceof Error ? fallbackError.message : 'Unknown error');
+              content = fileData.content; // Use raw content as last resort
+            }
           }
         }
-        loadedFiles.set(file.path, content);
-        logger.debug('system', `Loaded file: ${file.path} (${content.length} chars)`);
+        
+        if (content && content.trim().length > 0) {
+          loadedFiles.set(file.path, content);
+          logger.debug('system', `Loaded file: ${file.path} (${content.length} chars)`);
+        } else {
+          logger.warning('system', `Skipped empty file: ${file.path}`);
+        }
       } catch (error) {
         logger.warning('system', `Failed to load ${file.path}`, error instanceof Error ? error.message : 'Unknown error');
       }
     }
     
     setProjectFiles(loadedFiles);
-    logger.info('system', `Loaded ${loadedFiles.size} project files for testing`);
+    logger.info('system', `Loaded ${loadedFiles.size} project files for analysis and GitHub integration`);
   };
 
   const handleFileSelect = async (file: GitHubTreeItem) => {

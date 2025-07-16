@@ -73,7 +73,9 @@ export class Logger {
   }
 
   debug(category: LogEntry['category'], message: string, details?: string, metadata?: Record<string, any>) {
-    this.log('debug', category, message, details, metadata);
+    if (process.env.NODE_ENV === 'development') {
+      this.log('debug', category, message, details, metadata);
+    }
   }
 
   startProcess(command: string): string {

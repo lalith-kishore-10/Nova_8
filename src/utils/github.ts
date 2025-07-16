@@ -23,7 +23,12 @@ export function parseGitHubUrl(url: string): ParsedRepoUrl {
 }
 
 export async function fetchRepository(owner: string, repo: string): Promise<GitHubRepo> {
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'GitHub-Repository-Explorer'
+    }
+  });
   
   if (!response.ok) {
     if (response.status === 404) {
@@ -36,7 +41,12 @@ export async function fetchRepository(owner: string, repo: string): Promise<GitH
 }
 
 export async function fetchRepositoryTree(owner: string, repo: string, branch: string = 'main'): Promise<GitHubTree> {
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'GitHub-Repository-Explorer'
+    }
+  });
   
   if (!response.ok) {
     // Try 'master' branch if 'main' fails
@@ -50,10 +60,18 @@ export async function fetchRepositoryTree(owner: string, repo: string, branch: s
 }
 
 export async function fetchFileContent(owner: string, repo: string, path: string): Promise<GitHubFile> {
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'GitHub-Repository-Explorer'
+    }
+  });
   
   if (!response.ok) {
-    throw new Error(`Failed to fetch file content: ${response.statusText}`);
+    if (response.status === 404) {
+      throw new Error(`File not found: ${path}`);
+    }
+    throw new Error(`Failed to fetch file content for ${path}: ${response.statusText}`);
   }
 
   return response.json();

@@ -71,6 +71,20 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
       logger.error('github', 'Repository name is required');
       return;
     }
+    
+    // Validate that we have files to push
+    const totalFiles = dockerFiles ? 4 : 0; // dockerfile, dockerignore, readme, compose
+    const projectFileCount = projectFiles.size;
+    
+    if (totalFiles === 0 && projectFileCount === 0) {
+      logger.error('github', 'No files available to push');
+      setPushResult({
+        success: false,
+        error: 'No files available to push. Please ensure Docker files are generated and project files are loaded.'
+      });
+      return;
+    }
+    
     setIsPushing(true);
     setPushResult(null);
 
@@ -84,33 +98,64 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
       const filesToPush = new Map<string, string>();
       
       // Add Docker files
-      filesToPush.set('Dockerfile', dockerFiles.dockerfile);
-      filesToPush.set('.dockerignore', dockerFiles.dockerignore);
-      filesToPush.set('DOCKER_README.md', dockerFiles.readme);
+      if (dockerFiles.dockerfile) {
+        filesToPush.set('Dockerfile', dockerFiles.dockerfile);
+        logger.debug('github', 'Added Dockerfile to push');
+      }
+      
+      if (dockerFiles.dockerignore) {
+        filesToPush.set('.dockerignore', dockerFiles.dockerignore);
+        logger.debug('github', 'Added .dockerignore to push');
+      }
+      
+      if (dockerFiles.readme) {
+        filesToPush.set('DOCKER_README.md', dockerFiles.readme);
+        logger.debug('github', 'Added DOCKER_README.md to push');
+      }
       
       if (dockerFiles.dockerCompose) {
         filesToPush.set('docker-compose.yml', dockerFiles.dockerCompose);
+        logger.debug('github', 'Added docker-compose.yml to push');
       }
 
       // Add project files
       for (const [path, content] of projectFiles) {
-        // Skip binary files and very large files
-        if (content.length < 1000000 && !path.includes('.git/')) { // 1MB limit
+        // Skip binary files, very large files, and git files
+        if (content && 
+            content.length > 0 && 
+            content.length < 1000000 && 
+            !path.includes('.git/') && 
+            !path.includes('node_modules/') &&
+            !path.includes('.DS_Store') &&
+            !path.includes('Thumbs.db')) {
           filesToPush.set(path, content);
+          logger.debug('github', `Added project file: ${path} (${content.length} chars)`);
         }
       }
 
       // Add a main README if not exists
       if (!filesToPush.has('README.md')) {
-        filesToPush.set('README.md', generateMainReadme());
+        const mainReadme = generateMainReadme();
+        filesToPush.set('README.md', mainReadme);
+        logger.debug('github', 'Added generated README.md');
       }
 
       // Add .gitignore if not exists
       if (!filesToPush.has('.gitignore')) {
-        filesToPush.set('.gitignore', generateGitignore());
+        const gitignore = generateGitignore();
+        filesToPush.set('.gitignore', gitignore);
+        logger.debug('github', 'Added generated .gitignore');
       }
+      
+      // Final validation
+      if (filesToPush.size === 0) {
+        throw new Error('No valid files to push after filtering');
+      }
+      
       // Push files
       logger.info('github', `Pushing ${filesToPush.size} files to repository`);
+      logger.debug('github', `Files to push: ${Array.from(filesToPush.keys()).join(', ')}`);
+      
       const result = await githubAuth.pushFiles(
         repoOptions.name,
         filesToPush,
@@ -126,8 +171,8 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setPushResult({ success: false, error: errorMessage });
       logger.error('github', 'Push operation failed', errorMessage);
+      setPushResult({ success: false, error: errorMessage });
     } finally {
       setIsPushing(false);
     }
@@ -198,6 +243,19 @@ target/
 
 ${repoOptions.description}
 
+## Project Overview
+
+This project was analyzed and configured with the following stack:
+- **Primary Language**: ${analysis?.primaryLanguage || 'Not detected'}
+- **Framework**: ${analysis?.framework || 'None detected'}
+- **Runtime**: ${analysis?.runtime || 'Not specified'}
+- **Package Manager**: ${analysis?.packageManager || 'Not detected'}
+
+## Dependencies
+
+- **Runtime Dependencies**: ${analysis?.dependencies?.length || 0}
+- **Development Dependencies**: ${analysis?.devDependencies?.length || 0}
+
 ## Quick Start
 
 ### Using Docker
@@ -228,10 +286,11 @@ See [DOCKER_README.md](./DOCKER_README.md) for detailed Docker configuration inf
 ## Generated Files
 
 This project was generated with:
-- Dockerfile for containerization
-- docker-compose.yml for multi-service setup
-- .dockerignore for optimized builds
-- Complete documentation
+- ✅ Dockerfile for containerization
+- ✅ docker-compose.yml for multi-service setup  
+- ✅ .dockerignore for optimized builds
+- ✅ Complete documentation
+- ✅ Project files and configuration
 
 ---
 
