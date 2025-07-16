@@ -7,6 +7,8 @@ import { StackAnalysisComponent } from './components/StackAnalysis';
 import { DockerFiles } from './components/DockerFiles';
 import { ValidationReport } from './components/ValidationReport';
 import { OutputsAndLogs } from './components/OutputsAndLogs';
+import { TestRunner } from './components/TestRunner';
+import { GitHubIntegration } from './components/GitHubIntegration';
 import { NotificationCenter } from './components/NotificationCenter';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { fetchRepository, fetchRepositoryTree, fetchFileContent } from './utils/github';
@@ -31,7 +33,8 @@ function App() {
   const [dockerFiles, setDockerFiles] = useState<GeneratedFiles | null>(null);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [activeTab, setActiveTab] = useState<'files' | 'analysis' | 'docker' | 'validation' | 'logs'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'analysis' | 'docker' | 'validation' | 'testing' | 'github' | 'logs'>('files');
+  const [projectFiles, setProjectFiles] = useState<Map<string, string>>(new Map());
 
   const handleRepoSubmit = async (owner: string, repoName: string) => {
     setState('loading');
@@ -49,12 +52,47 @@ function App() {
       setFiles(treeData.tree.filter(item => item.type === 'blob'));
       logger.success('api', `Repository loaded successfully: ${repoData.full_name}`, 
         `Found ${treeData.tree.length} files`);
+      
+      // Load key project files for testing and GitHub integration
+      await loadProjectFiles(owner, repoName, treeData.tree);
+      
       setState('repository');
     } catch (err) {
       logger.error('api', 'Failed to load repository', err instanceof Error ? err.message : 'Unknown error');
       setError(err instanceof Error ? err.message : 'An error occurred');
       setState('input');
     }
+  };
+
+  const loadProjectFiles = async (owner: string, repoName: string, files: GitHubTreeItem[]) => {
+    const filesToLoad = files.filter(file => 
+      file.type === 'blob' && 
+      (file.path.endsWith('.js') || 
+       file.path.endsWith('.ts') || 
+       file.path.endsWith('.jsx') || 
+       file.path.endsWith('.tsx') ||
+       file.path.endsWith('.py') ||
+       file.path.endsWith('.json') ||
+       file.path === 'package.json' ||
+       file.path === 'requirements.txt' ||
+       file.path === 'README.md' ||
+       file.path === '.gitignore')
+    ).slice(0, 20); // Limit to prevent too many API calls
+
+    const loadedFiles = new Map<string, string>();
+    
+    for (const file of filesToLoad) {
+      try {
+        const fileData = await fetchFileContent(owner, repoName, file.path);
+        const content = fileData.content ? atob(fileData.content) : '';
+        loadedFiles.set(file.path, content);
+      } catch (error) {
+        console.warn(`Failed to load ${file.path}:`, error);
+      }
+    }
+    
+    setProjectFiles(loadedFiles);
+    logger.info('system', `Loaded ${loadedFiles.size} project files for testing`);
   };
 
   const handleFileSelect = async (file: GitHubTreeItem) => {
@@ -289,6 +327,28 @@ function App() {
             Validation Report
           </button>
           <button
+            onClick={() => setActiveTab('testing')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'testing'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+            disabled={!stackAnalysis}
+          >
+            Testing & Fixes
+          </button>
+          <button
+            onClick={() => setActiveTab('github')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'github'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+            disabled={!dockerFiles}
+          >
+            Push to GitHub
+          </button>
+          <button
             onClick={() => setActiveTab('logs')}
             className={`py-3 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'logs'
@@ -370,6 +430,27 @@ function App() {
 
         {activeTab === 'logs' && (
           <OutputsAndLogs />
+        )}
+
+        {activeTab === 'testing' && stackAnalysis && dockerFiles && (
+          <div className="flex-1 bg-white overflow-auto p-6">
+            <TestRunner 
+              analysis={stackAnalysis}
+              dockerFiles={dockerFiles}
+              projectFiles={projectFiles}
+              onFilesUpdated={setProjectFiles}
+            />
+          </div>
+        )}
+
+        {activeTab === 'github' && dockerFiles && (
+          <div className="flex-1 bg-white overflow-auto p-6">
+            <GitHubIntegration 
+              dockerFiles={dockerFiles}
+              projectFiles={projectFiles}
+              repoName={repo.name}
+            />
+          </div>
         )}
       </div>
     </div>

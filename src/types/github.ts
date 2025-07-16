@@ -44,3 +44,29 @@ export interface ParsedRepoUrl {
   repo: string;
   isValid: boolean;
 }
+
+export interface GitHubAuth {
+  token: string;
+  user: GitHubUser;
+}
+
+export interface GitHubUser {
+  login: string;
+  id: number;
+  name: string;
+  email: string;
+  avatar_url: string;
+}
+
+export interface CreateRepoOptions {
+  name: string;
+  description?: string;
+  private?: boolean;
+  auto_init?: boolean;
+}
+
+export interface PushResult {
+  success: boolean;
+  repoUrl?: string;
+  error?: string;
+}
