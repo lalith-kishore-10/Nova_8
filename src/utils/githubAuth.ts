@@ -116,7 +116,7 @@ export class GitHubAuthManager {
         const { data: blob } = await this.octokit.rest.git.createBlob({
           owner,
           repo: repoName,
-          content: Buffer.from(content).toString('base64'),
+          content: btoa(unescape(encodeURIComponent(content))),
           encoding: 'base64'
         });
         blobs.set(path, blob.sha);
