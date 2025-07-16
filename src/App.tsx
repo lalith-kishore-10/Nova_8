@@ -43,6 +43,9 @@ function App() {
     logger.info('api', `Loading repository: ${owner}/${repoName}`);
 
     try {
+      // Add a small delay to show loading state
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const [repoData, treeData] = await Promise.all([
         fetchRepository(owner, repoName),
         fetchRepositoryTree(owner, repoName)
@@ -59,7 +62,23 @@ function App() {
       setState('repository');
     } catch (err) {
       logger.error('api', 'Failed to load repository', err instanceof Error ? err.message : 'Unknown error');
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      
+      // Provide more helpful error messages
+      let errorMessage = 'An error occurred while loading the repository';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // Add helpful suggestions for common errors
+        if (err.message.includes('not found')) {
+          errorMessage += '\n\nSuggestions:\n• Check the repository name spelling\n• Ensure the repository is public\n• Verify the owner/organization name';
+        } else if (err.message.includes('rate limit')) {
+          errorMessage += '\n\nTry again in a few minutes or check GitHub API status.';
+        } else if (err.message.includes('network') || err.message.includes('fetch')) {
+          errorMessage += '\n\nThis might be a network issue. Please check your internet connection and try again.';
+        }
+      }
+      
+      setError(errorMessage);
       setState('input');
     }
   };

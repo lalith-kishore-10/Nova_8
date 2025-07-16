@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Search, Github, AlertCircle } from 'lucide-react';
-import { parseGitHubUrl } from '../utils/github';
+import { Search, Github, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { parseGitHubUrl, checkGitHubApiStatus } from '../utils/github';
 
 interface RepoInputProps {
   onSubmit: (owner: string, repo: string) => void;
@@ -11,7 +11,23 @@ interface RepoInputProps {
 export function RepoInput({ onSubmit, loading, error }: RepoInputProps) {
   const [url, setUrl] = useState('');
   const [isValidUrl, setIsValidUrl] = useState(true);
+  const [isCheckingApi, setIsCheckingApi] = useState(false);
+  const [apiStatus, setApiStatus] = useState<{ status: string; message: string } | null>(null);
 
+  const checkApiStatus = async () => {
+    setIsCheckingApi(true);
+    try {
+      const status = await checkGitHubApiStatus();
+      setApiStatus(status);
+    } catch (error) {
+      setApiStatus({
+        status: 'error',
+        message: 'Failed to check GitHub API status'
+      });
+    } finally {
+      setIsCheckingApi(false);
+    }
+  };
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -90,6 +106,41 @@ export function RepoInput({ onSubmit, loading, error }: RepoInputProps) {
         </button>
       </form>
 
+      <div className="mt-6 flex items-center justify-center">
+        <button
+          onClick={checkApiStatus}
+          disabled={isCheckingApi}
+          className="flex items-center text-sm text-gray-600 hover:text-gray-800 transition-colors"
+        >
+          {isCheckingApi ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+          ) : apiStatus?.status === 'ok' ? (
+            <Wifi className="h-4 w-4 mr-2 text-green-600" />
+          ) : apiStatus?.status === 'error' ? (
+            <WifiOff className="h-4 w-4 mr-2 text-red-600" />
+          ) : (
+            <Wifi className="h-4 w-4 mr-2" />
+          )}
+          {isCheckingApi ? 'Checking...' : 'Check GitHub API Status'}
+        </button>
+      </div>
+
+      {apiStatus && (
+        <div className={`mt-4 p-3 rounded-lg text-sm ${
+          apiStatus.status === 'ok' 
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          <div className="flex items-center">
+            {apiStatus.status === 'ok' ? (
+              <Wifi className="h-4 w-4 mr-2" />
+            ) : (
+              <WifiOff className="h-4 w-4 mr-2" />
+            )}
+            {apiStatus.message}
+          </div>
+        </div>
+      )}
       <div className="mt-8 text-center text-gray-500 text-sm">
         <p>Supports formats:</p>
         <p className="mt-2">

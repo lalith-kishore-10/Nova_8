@@ -81,8 +81,28 @@ export class GitHubAuthManager {
         throw new Error('No files to push');
       }
       
+      // Filter out invalid files more thoroughly
+      const validFiles = new Map<string, string>();
+      for (const [path, content] of files) {
+        if (content && 
+            typeof content === 'string' && 
+            content.trim().length > 0 && 
+            content.length < 10000000 && // 10MB limit
+            !path.includes('..') && // Security check
+            !path.startsWith('/') && // Security check
+            path.length > 0) {
+          validFiles.set(path, content);
+        } else {
+          logger.warning('github', `Skipping invalid file: ${path}`);
+        }
+      }
+      
+      if (validFiles.size === 0) {
+        throw new Error('No valid files to push after filtering');
+      }
+      
       // Log files being pushed for debugging
-      logger.debug('github', 'Files to push:', Array.from(files.keys()).join(', '));
+      logger.debug('github', 'Valid files to push:', Array.from(validFiles.keys()).join(', '));
 
       // Check if repository exists and get its info
       let repo;
@@ -118,17 +138,19 @@ export class GitHubAuthManager {
 
       // Create blobs for all files
       const blobs = new Map<string, string>();
-      for (const [path, content] of files) {
-        if (!content || content.trim() === '') {
-          logger.warning('github', `Skipping empty file: ${path}`);
-          continue;
-        }
-        
+      for (const [path, content] of validFiles) {
         logger.debug('github', `Creating blob for ${path}`);
         
         try {
-          // Properly encode content to base64
-          const encodedContent = Buffer.from(content, 'utf8').toString('base64');
+          // Ensure content is properly encoded
+          let encodedContent: string;
+          try {
+            // Try to encode as UTF-8 first
+            encodedContent = btoa(unescape(encodeURIComponent(content)));
+          } catch (encodeError) {
+            // Fallback to simple base64 encoding
+            encodedContent = btoa(content);
+          }
           
           const { data: blob } = await this.octokit.rest.git.createBlob({
             owner,
@@ -274,6 +296,11 @@ export class GitHubAuthManager {
         return {
           success: false,
           error: 'No files to push. Please ensure you have selected files to upload.'
+        };
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        return {
+          success: false,
+          error: 'Network error occurred. Please check your internet connection and try again.'
         };
       }
       
