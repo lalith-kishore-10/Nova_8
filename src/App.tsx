@@ -156,7 +156,6 @@ function App() {
           } catch (err) {
             // Continue if file fetch fails
             logger.warning('analysis', `Could not fetch ${fileName}`, err instanceof Error ? err.message : 'Unknown error');
-            console.warn(`Failed to fetch ${fileName}:`, err);
           }
         }
       }
@@ -164,6 +163,28 @@ function App() {
       logger.addProcessOutput(processId, 'stdout', 'Analyzing technology stack...');
 
       const analysis = await analyzer.analyzeStack();
+      
+      // Ensure we have valid analysis data
+      if (!analysis.primaryLanguage || analysis.primaryLanguage === 'unknown') {
+        // Try to detect from file extensions if no package files found
+        const jsFiles = files.filter(f => f.path.endsWith('.js') || f.path.endsWith('.jsx')).length;
+        const tsFiles = files.filter(f => f.path.endsWith('.ts') || f.path.endsWith('.tsx')).length;
+        const pyFiles = files.filter(f => f.path.endsWith('.py')).length;
+        const javaFiles = files.filter(f => f.path.endsWith('.java')).length;
+        
+        if (tsFiles > 0) {
+          analysis.primaryLanguage = 'typescript';
+        } else if (jsFiles > 0) {
+          analysis.primaryLanguage = 'javascript';
+        } else if (pyFiles > 0) {
+          analysis.primaryLanguage = 'python';
+        } else if (javaFiles > 0) {
+          analysis.primaryLanguage = 'java';
+        }
+        
+        logger.info('analysis', `Detected primary language from file extensions: ${analysis.primaryLanguage}`);
+      }
+      
       setStackAnalysis(analysis);
       logger.success('analysis', `Stack analysis complete`, 
         `Detected: ${analysis.primaryLanguage}${analysis.framework ? ` with ${analysis.framework}` : ''}`);

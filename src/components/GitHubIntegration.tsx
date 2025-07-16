@@ -67,13 +67,18 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
       return;
     }
 
+    if (!repoOptions.name.trim()) {
+      logger.error('github', 'Repository name is required');
+      return;
+    }
     setIsPushing(true);
     setPushResult(null);
 
     try {
       // Create repository
       logger.info('github', `Creating repository: ${repoOptions.name}`);
-      await githubAuth.createRepository(repoOptions);
+      const repoUrl = await githubAuth.createRepository(repoOptions);
+      logger.success('github', `Repository created successfully: ${repoUrl}`);
 
       // Prepare files for push
       const filesToPush = new Map<string, string>();
@@ -89,7 +94,10 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
 
       // Add project files
       for (const [path, content] of projectFiles) {
-        filesToPush.set(path, content);
+        // Skip binary files and very large files
+        if (content.length < 1000000 && !path.includes('.git/')) { // 1MB limit
+          filesToPush.set(path, content);
+        }
       }
 
       // Add a main README if not exists
@@ -97,12 +105,16 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
         filesToPush.set('README.md', generateMainReadme());
       }
 
+      // Add .gitignore if not exists
+      if (!filesToPush.has('.gitignore')) {
+        filesToPush.set('.gitignore', generateGitignore());
+      }
       // Push files
       logger.info('github', `Pushing ${filesToPush.size} files to repository`);
       const result = await githubAuth.pushFiles(
         repoOptions.name,
         filesToPush,
-        'Initial commit with Docker configuration'
+        '🚀 Initial commit with Docker configuration and project files'
       );
 
       setPushResult(result);
@@ -119,6 +131,66 @@ export function GitHubIntegration({ dockerFiles, projectFiles, repoName }: GitHu
     } finally {
       setIsPushing(false);
     }
+  };
+
+  const generateGitignore = () => {
+    return `# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+.next/
+.nuxt/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Temporary files
+*.tmp
+*.temp
+`;
   };
 
   const generateMainReadme = () => {
@@ -182,7 +254,7 @@ This project was generated with:
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-blue-900 mb-2">
-                GitHub Personal Access Token
+                GitHub Personal Access Token *
               </label>
               <div className="relative">
                 <Key className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -191,6 +263,7 @@ This project was generated with:
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  autoComplete="off"
                   className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -220,9 +293,13 @@ This project was generated with:
         <div className="bg-gray-50 rounded-lg p-4">
           <h4 className="font-medium text-gray-900 mb-2">Required Permissions</h4>
           <ul className="text-sm text-gray-600 space-y-1">
-            <li>• <strong>repo</strong> - Create and manage repositories</li>
+            <li>• <strong>repo</strong> - Create and manage repositories (full control)</li>
             <li>• <strong>user</strong> - Read user profile information</li>
+            <li>• <strong>delete_repo</strong> - Delete repositories (optional)</li>
           </ul>
+          <p className="text-xs text-gray-500 mt-2">
+            Make sure to select "repo" scope when creating your token for full repository access.
+          </p>
         </div>
       </div>
     );
@@ -267,9 +344,14 @@ This project was generated with:
               type="text"
               value={repoOptions.name}
               onChange={(e) => setRepoOptions(prev => ({ ...prev, name: e.target.value }))}
+              pattern="[a-zA-Z0-9._-]+"
+              title="Repository name can only contain letters, numbers, dots, hyphens, and underscores"
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="my-awesome-project"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Only letters, numbers, dots, hyphens, and underscores are allowed
+            </p>
           </div>
           
           <div>
@@ -312,7 +394,7 @@ This project was generated with:
           </div>
           <ul className="ml-6 text-sm text-gray-600 space-y-1">
             <li>• Dockerfile</li>
-            <li>• docker-compose.yml</li>
+            {dockerFiles.dockerCompose && <li>• docker-compose.yml</li>}
             <li>• .dockerignore</li>
             <li>• DOCKER_README.md</li>
           </ul>
@@ -321,13 +403,22 @@ This project was generated with:
             <GitBranch className="h-4 w-4 text-blue-600 mr-2" />
             <span className="font-medium">Project Files: {projectFiles.size} files</span>
           </div>
+          
+          <div className="flex items-center text-sm mt-2">
+            <GitBranch className="h-4 w-4 text-purple-600 mr-2" />
+            <span className="font-medium">Additional Files:</span>
+          </div>
+          <ul className="ml-6 text-sm text-gray-600 space-y-1">
+            <li>• README.md (main project documentation)</li>
+            <li>• .gitignore (ignore unnecessary files)</li>
+          </ul>
         </div>
       </div>
 
       {/* Push Button */}
       <button
         onClick={handlePushToGitHub}
-        disabled={isPushing || !repoOptions.name.trim()}
+        disabled={isPushing || !repoOptions.name.trim() || !/^[a-zA-Z0-9._-]+$/.test(repoOptions.name)}
         className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
       >
         {isPushing ? (
@@ -364,13 +455,16 @@ This project was generated with:
                     rel="noopener noreferrer"
                     className="text-sm text-green-700 hover:text-green-800 underline"
                   >
-                    View repository →
+                    🔗 View repository on GitHub →
                   </a>
                 </div>
               ) : (
                 <div>
                   <p className="font-medium text-red-900">Push failed</p>
                   <p className="text-sm text-red-700">{pushResult.error}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Please check your token permissions and try again.
+                  </p>
                 </div>
               )}
             </div>

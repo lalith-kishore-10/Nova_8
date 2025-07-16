@@ -16,9 +16,17 @@ export class StackAnalyzer {
   async analyzeStack(): Promise<StackAnalysis> {
     const analysis: StackAnalysis = {
       primaryLanguage: this.detectPrimaryLanguage(),
+      framework: undefined,
+      packageManager: undefined,
+      runtime: undefined,
+      database: [],
       dependencies: [],
       devDependencies: [],
-      scripts: {}
+      scripts: {},
+      buildTool: undefined,
+      testFramework: undefined,
+      linting: [],
+      styling: []
     };
 
     // Analyze package.json for Node.js projects
@@ -55,7 +63,11 @@ export class StackAnalyzer {
     this.detectFramework(analysis);
     this.detectBuildTools(analysis);
     this.detectDatabase(analysis);
+    this.detectPackageManager(analysis);
 
+    // Log analysis results for debugging
+    console.log('Stack Analysis Results:', analysis);
+    
     return analysis;
   }
 
@@ -214,23 +226,33 @@ export class StackAnalyzer {
 
   private detectFramework(analysis: StackAnalysis) {
     const deps = [...analysis.dependencies, ...analysis.devDependencies];
+    const hasFile = (name: string) => this.files.some(f => f.path === name || f.path.endsWith(`/${name}`));
     
     // React
     if (deps.some(d => d.name === 'react')) {
       analysis.framework = 'React';
       if (deps.some(d => d.name === 'next')) analysis.framework = 'Next.js';
       if (deps.some(d => d.name === 'gatsby')) analysis.framework = 'Gatsby';
+      if (hasFile('next.config.js') || hasFile('next.config.ts')) analysis.framework = 'Next.js';
     }
     
     // Vue
     if (deps.some(d => d.name === 'vue')) {
       analysis.framework = 'Vue.js';
       if (deps.some(d => d.name === 'nuxt')) analysis.framework = 'Nuxt.js';
+      if (hasFile('nuxt.config.js') || hasFile('nuxt.config.ts')) analysis.framework = 'Nuxt.js';
     }
     
     // Angular
     if (deps.some(d => d.name.startsWith('@angular/'))) {
       analysis.framework = 'Angular';
+    }
+    
+    // Check for framework files if no dependencies detected
+    if (!analysis.framework) {
+      if (hasFile('angular.json')) analysis.framework = 'Angular';
+      if (hasFile('vue.config.js')) analysis.framework = 'Vue.js';
+      if (hasFile('svelte.config.js')) analysis.framework = 'Svelte';
     }
     
     // Node.js frameworks
@@ -245,6 +267,41 @@ export class StackAnalyzer {
     
     // Java frameworks
     if (deps.some(d => d.name.includes('spring'))) analysis.framework = 'Spring Boot';
+    
+    // Set runtime based on language and framework
+    if (analysis.primaryLanguage === 'javascript' || analysis.primaryLanguage === 'typescript') {
+      analysis.runtime = 'Node.js';
+    } else if (analysis.primaryLanguage === 'python') {
+      analysis.runtime = 'Python';
+    } else if (analysis.primaryLanguage === 'java') {
+      analysis.runtime = 'JVM';
+    }
+  }
+
+  private detectPackageManager(analysis: StackAnalysis) {
+    const hasFile = (name: string) => this.files.some(f => f.path === name);
+    
+    if (hasFile('package-lock.json')) {
+      analysis.packageManager = 'npm';
+    } else if (hasFile('yarn.lock')) {
+      analysis.packageManager = 'yarn';
+    } else if (hasFile('pnpm-lock.yaml')) {
+      analysis.packageManager = 'pnpm';
+    } else if (hasFile('requirements.txt')) {
+      analysis.packageManager = 'pip';
+    } else if (hasFile('Pipfile')) {
+      analysis.packageManager = 'pipenv';
+    } else if (hasFile('poetry.lock')) {
+      analysis.packageManager = 'poetry';
+    } else if (hasFile('Cargo.toml')) {
+      analysis.packageManager = 'cargo';
+    } else if (hasFile('go.mod')) {
+      analysis.packageManager = 'go mod';
+    } else if (hasFile('composer.json')) {
+      analysis.packageManager = 'composer';
+    } else if (hasFile('Gemfile')) {
+      analysis.packageManager = 'bundler';
+    }
   }
 
   private detectBuildTools(analysis: StackAnalysis) {
@@ -255,6 +312,8 @@ export class StackAnalyzer {
     if (hasFile('rollup.config.js')) analysis.buildTool = 'Rollup';
     if (hasFile('gulpfile.js')) analysis.buildTool = 'Gulp';
     if (hasFile('Gruntfile.js')) analysis.buildTool = 'Grunt';
+    if (hasFile('esbuild.config.js')) analysis.buildTool = 'esbuild';
+    if (hasFile('snowpack.config.js')) analysis.buildTool = 'Snowpack';
     
     // Test frameworks
     const deps = [...analysis.dependencies, ...analysis.devDependencies];
@@ -262,24 +321,26 @@ export class StackAnalyzer {
     if (deps.some(d => d.name === 'mocha')) analysis.testFramework = 'Mocha';
     if (deps.some(d => d.name === 'vitest')) analysis.testFramework = 'Vitest';
     if (deps.some(d => d.name === 'cypress')) analysis.testFramework = 'Cypress';
+    if (deps.some(d => d.name === 'playwright')) analysis.testFramework = 'Playwright';
+    if (deps.some(d => d.name === 'puppeteer')) analysis.testFramework = 'Puppeteer';
     
     // Linting
-    analysis.linting = [];
     if (deps.some(d => d.name === 'eslint')) analysis.linting.push('ESLint');
     if (deps.some(d => d.name === 'prettier')) analysis.linting.push('Prettier');
     if (deps.some(d => d.name === 'tslint')) analysis.linting.push('TSLint');
+    if (hasFile('.eslintrc.js') || hasFile('.eslintrc.json')) analysis.linting.push('ESLint');
+    if (hasFile('.prettierrc') || hasFile('prettier.config.js')) analysis.linting.push('Prettier');
     
     // Styling
-    analysis.styling = [];
     if (deps.some(d => d.name === 'tailwindcss')) analysis.styling.push('Tailwind CSS');
     if (deps.some(d => d.name === 'sass')) analysis.styling.push('Sass');
     if (deps.some(d => d.name === 'less')) analysis.styling.push('Less');
     if (deps.some(d => d.name === 'styled-components')) analysis.styling.push('Styled Components');
+    if (hasFile('tailwind.config.js') || hasFile('tailwind.config.ts')) analysis.styling.push('Tailwind CSS');
   }
 
   private detectDatabase(analysis: StackAnalysis) {
     const deps = [...analysis.dependencies, ...analysis.devDependencies];
-    analysis.database = [];
     
     if (deps.some(d => d.name.includes('mongodb') || d.name === 'mongoose')) {
       analysis.database.push('MongoDB');
@@ -295,6 +356,12 @@ export class StackAnalyzer {
     }
     if (deps.some(d => d.name.includes('sqlite'))) {
       analysis.database.push('SQLite');
+    }
+    if (deps.some(d => d.name.includes('firebase'))) {
+      analysis.database.push('Firebase');
+    }
+    if (deps.some(d => d.name.includes('supabase'))) {
+      analysis.database.push('Supabase');
     }
   }
 

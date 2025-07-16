@@ -39,18 +39,31 @@ export class GitHubAuthManager {
     }
 
     try {
+      logger.info('github', `Creating repository: ${options.name}`);
+      
       const { data: repo } = await this.octokit.rest.repos.createForAuthenticatedUser({
         name: options.name,
         description: options.description,
         private: options.private || false,
-        auto_init: options.auto_init || true
+        auto_init: false // Don't auto-init to avoid conflicts
       });
 
       logger.success('github', `Repository created: ${repo.full_name}`);
-      return repo.clone_url;
+      return repo.html_url;
     } catch (error) {
-      logger.error('github', 'Failed to create repository', error instanceof Error ? error.message : 'Unknown error');
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('github', 'Failed to create repository', errorMessage);
+      
+      // Handle specific GitHub API errors
+      if (errorMessage.includes('name already exists')) {
+        throw new Error(`Repository "${options.name}" already exists. Please choose a different name.`);
+      } else if (errorMessage.includes('Bad credentials')) {
+        throw new Error('Invalid GitHub token. Please check your token and try again.');
+      } else if (errorMessage.includes('rate limit')) {
+        throw new Error('GitHub API rate limit exceeded. Please try again later.');
+      }
+      
+      throw new Error(`Failed to create repository: ${errorMessage}`);
     }
   }
 
@@ -61,23 +74,45 @@ export class GitHubAuthManager {
 
     try {
       const owner = this.auth.user.login;
+      logger.info('github', `Pushing ${files.size} files to ${owner}/${repoName}`);
       
-      // Get the repository
-      const { data: repo } = await this.octokit.rest.repos.get({
-        owner,
-        repo: repoName
-      });
 
-      // Get the default branch
-      const { data: branch } = await this.octokit.rest.repos.getBranch({
-        owner,
-        repo: repoName,
-        branch: repo.default_branch
-      });
+      // Check if repository exists and get its info
+      let repo;
+      try {
+        const { data } = await this.octokit.rest.repos.get({
+          owner,
+          repo: repoName
+        });
+        repo = data;
+      } catch (error: any) {
+        if (error.status === 404) {
+          throw new Error(`Repository "${repoName}" not found. Please create it first.`);
+        }
+        throw error;
+      }
+
+      // Check if repository is empty (no commits)
+      let parentSha: string | undefined;
+      let treeSha: string | undefined;
+      
+      try {
+        const { data: branch } = await this.octokit.rest.repos.getBranch({
+          owner,
+          repo: repoName,
+          branch: repo.default_branch
+        });
+        parentSha = branch.commit.sha;
+        treeSha = branch.commit.commit.tree.sha;
+      } catch (error: any) {
+        // Repository is empty, no default branch exists yet
+        logger.info('github', 'Repository is empty, creating initial commit');
+      }
 
       // Create blobs for all files
       const blobs = new Map<string, string>();
       for (const [path, content] of files) {
+        logger.debug('github', `Creating blob for ${path}`);
         const { data: blob } = await this.octokit.rest.git.createBlob({
           owner,
           repo: repoName,
@@ -95,29 +130,45 @@ export class GitHubAuthManager {
         sha
       }));
 
+      logger.info('github', `Creating tree with ${tree.length} files`);
       const { data: newTree } = await this.octokit.rest.git.createTree({
         owner,
         repo: repoName,
         tree,
-        base_tree: branch.commit.commit.tree.sha
+        base_tree: treeSha // undefined for empty repos
       });
 
       // Create commit
+      logger.info('github', 'Creating commit');
       const { data: commit } = await this.octokit.rest.git.createCommit({
         owner,
         repo: repoName,
         message: commitMessage,
         tree: newTree.sha,
-        parents: [branch.commit.sha]
+        parents: parentSha ? [parentSha] : [] // empty array for initial commit
       });
 
-      // Update branch reference
-      await this.octokit.rest.git.updateRef({
-        owner,
-        repo: repoName,
-        ref: `heads/${repo.default_branch}`,
-        sha: commit.sha
-      });
+      // Create or update branch reference
+      if (parentSha) {
+        // Update existing branch
+        logger.info('github', `Updating ${repo.default_branch} branch`);
+        await this.octokit.rest.git.updateRef({
+          owner,
+          repo: repoName,
+          ref: `heads/${repo.default_branch}`,
+          sha: commit.sha
+        });
+      } else {
+        // Create initial branch (usually main or master)
+        const defaultBranch = repo.default_branch || 'main';
+        logger.info('github', `Creating ${defaultBranch} branch`);
+        await this.octokit.rest.git.createRef({
+          owner,
+          repo: repoName,
+          ref: `refs/heads/${defaultBranch}`,
+          sha: commit.sha
+        });
+      }
 
       logger.success('github', `Files pushed to ${repo.full_name}`);
       
@@ -128,6 +179,24 @@ export class GitHubAuthManager {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('github', 'Failed to push files', errorMessage);
+      
+      // Handle specific errors
+      if (errorMessage.includes('Bad credentials')) {
+        return {
+          success: false,
+          error: 'Invalid GitHub token. Please check your token and try again.'
+        };
+      } else if (errorMessage.includes('rate limit')) {
+        return {
+          success: false,
+          error: 'GitHub API rate limit exceeded. Please try again later.'
+        };
+      } else if (errorMessage.includes('not found')) {
+        return {
+          success: false,
+          error: 'Repository not found. Please make sure the repository exists and you have access to it.'
+        };
+      }
       
       return {
         success: false,

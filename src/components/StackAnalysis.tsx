@@ -31,11 +31,21 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
   );
 
   const Badge = ({ children, color = 'blue' }: { children: React.ReactNode, color?: string }) => (
-    <span className={`inline-block px-2 py-1 text-xs rounded-full bg-${color}-100 text-${color}-800 mr-1 mb-1`}>
+    <span className={`inline-block px-2 py-1 text-xs rounded-full mr-1 mb-1 ${
+      color === 'blue' ? 'bg-blue-100 text-blue-800' :
+      color === 'green' ? 'bg-green-100 text-green-800' :
+      color === 'purple' ? 'bg-purple-100 text-purple-800' :
+      color === 'orange' ? 'bg-orange-100 text-orange-800' :
+      color === 'pink' ? 'bg-pink-100 text-pink-800' :
+      color === 'indigo' ? 'bg-indigo-100 text-indigo-800' :
+      'bg-gray-100 text-gray-800'
+    }`}>
       {children}
     </span>
   );
 
+  // Debug log to check analysis data
+  console.log('StackAnalysis component received:', analysis);
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6">
@@ -46,7 +56,7 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-gray-600">Language:</span>
-            <p className="font-semibold text-gray-900 capitalize">{primaryLanguage}</p>
+            <p className="font-semibold text-gray-900 capitalize">{primaryLanguage || 'Unknown'}</p>
           </div>
           {framework && (
             <div>
@@ -58,6 +68,12 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
             <div>
               <span className="text-gray-600">Package Manager:</span>
               <p className="font-semibold text-gray-900">{packageManager}</p>
+            </div>
+          )}
+          {runtime && (
+            <div>
+              <span className="text-gray-600">Runtime:</span>
+              <p className="font-semibold text-gray-900">{runtime}</p>
             </div>
           )}
           <div>
@@ -123,19 +139,23 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
             {buildTool && (
               <div>
                 <span className="text-sm text-gray-600">Build Tool:</span>
-                <Badge color="orange">{buildTool}</Badge>
+                <div className="mt-1">
+                  <Badge color="orange">{buildTool}</Badge>
+                </div>
               </div>
             )}
             {testFramework && (
               <div>
                 <span className="text-sm text-gray-600">Testing:</span>
-                <Badge color="green">{testFramework}</Badge>
+                <div className="mt-1">
+                  <Badge color="green">{testFramework}</Badge>
+                </div>
               </div>
             )}
             {linting && linting.length > 0 && (
               <div>
                 <span className="text-sm text-gray-600">Linting:</span>
-                <div>
+                <div className="mt-1">
                   {linting.map((tool, index) => (
                     <Badge key={index} color="blue">{tool}</Badge>
                   ))}
@@ -145,7 +165,7 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
             {styling && styling.length > 0 && (
               <div>
                 <span className="text-sm text-gray-600">Styling:</span>
-                <div>
+                <div className="mt-1">
                   {styling.map((tool, index) => (
                     <Badge key={index} color="pink">{tool}</Badge>
                   ))}
@@ -157,16 +177,37 @@ export function StackAnalysisComponent({ analysis }: StackAnalysisProps) {
 
         <InfoCard icon={Database} title="Database & Services">
           {database && database.length > 0 ? (
-            <div>
+            <div className="space-y-2">
+              <span className="text-sm text-gray-600">Detected Databases:</span>
+              <div>
               {database.map((db, index) => (
                 <Badge key={index} color="indigo">{db}</Badge>
               ))}
+              </div>
             </div>
           ) : (
             <p className="text-gray-500 text-sm">No database services detected</p>
           )}
         </InfoCard>
       </div>
+
+      {/* Additional Information */}
+      {(analysis.scripts && Object.keys(analysis.scripts).length > 0) && (
+        <div className="bg-white rounded-lg border p-4">
+          <div className="flex items-center mb-3">
+            <Code className="h-5 w-5 text-green-600 mr-2" />
+            <h3 className="font-semibold text-gray-900">Available Scripts</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {Object.entries(analysis.scripts).map(([name, command]) => (
+              <div key={name} className="bg-gray-50 rounded p-2">
+                <div className="font-medium text-sm text-gray-900">{name}</div>
+                <div className="text-xs text-gray-600 font-mono">{command}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
